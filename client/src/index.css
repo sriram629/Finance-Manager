@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Dark fintech theme with glassmorphism */
+    --background: 220 25% 8%;
+    --foreground: 210 40% 98%;
+
+    /* Glassmorphic card */
+    --card: 220 20% 15%;
+    --card-foreground: 210 40% 98%;
+    --glass-bg: 220 20% 95%;
+    --glass-border: 220 30% 85%;
+
+    --popover: 220 25% 12%;
+    --popover-foreground: 210 40% 98%;
+
+    /* Purple-blue gradient theme */
+    --primary: 250 70% 55%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 260 80% 65%;
+
+    --secondary: 220 20% 20%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 220 20% 18%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 260 60% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 140 60% 50%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 220 25% 25%;
+    --input: 220 25% 20%;
+    --ring: 250 70% 55%;
+
+    --radius: 1rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(250, 70%, 55%),
+      hsl(260, 80%, 65%)
+    );
+    --gradient-dark: linear-gradient(
+      180deg,
+      hsl(220, 25%, 8%),
+      hsl(220, 30%, 5%)
+    );
+
+    /* Glassmorphism effects */
+    --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    --glass-blur: blur(12px);
+
+    /* Sidebar */
+    --sidebar-background: 220 25% 10%;
+    --sidebar-foreground: 210 40% 95%;
+    --sidebar-primary: 250 70% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 25% 18%;
+    --sidebar-accent-foreground: 210 40% 95%;
+    --sidebar-border: 220 25% 20%;
+    --sidebar-ring: 250 70% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
