@@ -1,0 +1,23 @@
+# Node.js dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
+
+# Build output
+dist/
+build/
+
+# Server uploads
+uploads/
+
+# Log files
+*.log
+
+# OS-generated files
+.DS_Store
+Thumbs.db
