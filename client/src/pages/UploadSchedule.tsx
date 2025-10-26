@@ -1,4 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useCallback } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import axios, { AxiosError } from "axios";
 import {
   Card,
   CardContent,
@@ -20,6 +23,7 @@ import {
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import {
@@ -30,168 +34,194 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
 import { Badge } from "../components/ui/badge";
+import api from "@/api/axios";
+import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
+
+interface PreviewRow {
+  row: number;
+  date: string;
+  hours: string | number;
+  hourlyRate: string | number;
+  tag: string | null;
+  notes: string | null;
+  isValid: boolean;
+  errors: string[];
+  day: string;
+}
 
 export default function UploadSchedule() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
+  const [tempFileId, setTempFileId] = useState<string | null>(null);
+  const [selectedRows, setSelectedRows] = useState<number[]>([]); // Store original row numbers (1-based)
 
+  // --- Mutations ---
+  const uploadMutation = useMutation<any, AxiosError<any>, File>({
+    mutationFn: (file) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      return api.post("/schedules/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: (data) => {
+      setPreviewData(data.data.preview || []);
+      setTempFileId(data.data.tempFileId);
+      // Automatically select all valid rows initially
+      const validRowNumbers = (data.data.preview || [])
+        .filter((row: PreviewRow) => row.isValid)
+        .map((row: PreviewRow) => row.row);
+      setSelectedRows(validRowNumbers);
+      toast({
+        title: "File Processed",
+        description: `Found ${data.data.valid} valid and ${data.data.invalid} invalid rows.`,
+      });
+    },
+    onError: (error) => {
+      setUploadedFile(null);
+      setPreviewData([]);
+      setTempFileId(null);
+      setSelectedRows([]);
+      toast({
+        title: "Upload Failed",
+        description: error.response?.data?.error || error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const confirmMutation = useMutation<
+    any,
+    AxiosError<any>,
+    { tempFileId: string; rowsToImport: number[] }
+  >({
+    mutationFn: (importData) =>
+      api.post("/schedules/confirm-upload", importData),
+    onSuccess: (data) => {
+      toast({ title: "Import Successful", description: data.data.message });
+      queryClient.invalidateQueries({ queryKey: ["schedules"] }); // Invalidate schedules query
+      setUploadedFile(null);
+      setPreviewData([]);
+      setTempFileId(null);
+      setSelectedRows([]);
+    },
+    onError: (error) => {
+      toast({
+        title: "Import Failed",
+        description: error.response?.data?.error || error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // --- Event Handlers ---
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
   }, []);
-
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
   }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-
-      const files = Array.from(e.dataTransfer.files);
-      const file = files[0];
-
-      if (
-        file &&
-        (file.name.endsWith(".xlsx") ||
-          file.name.endsWith(".csv") ||
-          file.name.endsWith(".xls"))
-      ) {
-        setUploadedFile(file);
-        // Mock preview data
-        setPreviewData([
-          {
-            date: "2025-01-20",
-            day: "Monday",
-            hours: 8,
-            rate: 15,
-            tag: "Regular",
-            status: "valid",
-          },
-          {
-            date: "2025-01-21",
-            day: "Tuesday",
-            hours: 8,
-            rate: 15,
-            tag: "Regular",
-            status: "valid",
-          },
-          {
-            date: "2025-01-22",
-            day: "Wednesday",
-            hours: 6,
-            rate: 15,
-            tag: "Part-time",
-            status: "valid",
-          },
-          {
-            date: "2025-01-23",
-            day: "Thursday",
-            hours: "",
-            rate: 15,
-            tag: "Regular",
-            status: "error",
-          },
-          {
-            date: "2025-01-24",
-            day: "Friday",
-            hours: 8,
-            rate: 15,
-            tag: "Regular",
-            status: "valid",
-          },
-        ]);
-        toast({
-          title: "File Uploaded",
-          description: `${file.name} has been uploaded successfully.`,
-        });
-      } else {
-        toast({
-          title: "Invalid File",
-          description: "Please upload a valid Excel (.xlsx, .xls) or CSV file.",
-          variant: "destructive",
-        });
-      }
-    },
-    [toast]
-  );
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  const processFile = (file: File | null) => {
+    if (
+      file &&
+      (file.name.endsWith(".xlsx") ||
+        file.name.endsWith(".csv") ||
+        file.name.endsWith(".xls"))
+    ) {
       setUploadedFile(file);
-      // Mock preview data
-      setPreviewData([
-        {
-          date: "2025-01-20",
-          day: "Monday",
-          hours: 8,
-          rate: 15,
-          tag: "Regular",
-          status: "valid",
-        },
-        {
-          date: "2025-01-21",
-          day: "Tuesday",
-          hours: 8,
-          rate: 15,
-          tag: "Regular",
-          status: "valid",
-        },
-        {
-          date: "2025-01-22",
-          day: "Wednesday",
-          hours: 6,
-          rate: 15,
-          tag: "Part-time",
-          status: "valid",
-        },
-        {
-          date: "2025-01-23",
-          day: "Thursday",
-          hours: "",
-          rate: 15,
-          tag: "Regular",
-          status: "error",
-        },
-        {
-          date: "2025-01-24",
-          day: "Friday",
-          hours: 8,
-          rate: 15,
-          tag: "Regular",
-          status: "valid",
-        },
-      ]);
+      setPreviewData([]); // Clear previous preview
+      setTempFileId(null);
+      setSelectedRows([]);
+      uploadMutation.mutate(file); // Trigger mutation
+    } else if (file) {
       toast({
-        title: "File Uploaded",
-        description: `${file.name} has been uploaded successfully.`,
+        title: "Invalid File Type",
+        description: "Please upload .xlsx, .xls, or .csv",
+        variant: "destructive",
       });
     }
   };
 
-  const handleDownloadTemplate = () => {
-    toast({
-      title: "Template Downloaded",
-      description: "Schedule template has been downloaded to your device.",
-    });
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      const files = Array.from(e.dataTransfer.files);
+      processFile(files[0]);
+    },
+    [uploadMutation, toast]
+  );
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    processFile(file || null);
+    e.target.value = ""; // Reset file input
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await api.get("/schedules/template", {
+        responseType: "blob", // Important for file downloads
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", "schedule_template.xlsx");
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast({
+        title: "Template Downloaded",
+        description: "Schedule template download started.",
+      });
+    } catch (error) {
+      console.error("Template download error:", error);
+      toast({
+        title: "Download Failed",
+        description: "Could not download the template.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleImport = () => {
-    const validRows = previewData.filter((row) => row.status === "valid");
-    toast({
-      title: "Schedule Imported",
-      description: `${validRows.length} entries have been imported successfully.`,
-    });
-    setUploadedFile(null);
-    setPreviewData([]);
+    if (!tempFileId || selectedRows.length === 0) {
+      toast({
+        title: "No Rows Selected",
+        description: "Please select at least one valid row to import.",
+        variant: "destructive",
+      });
+      return;
+    }
+    confirmMutation.mutate({ tempFileId, rowsToImport: selectedRows });
   };
+
+  const handleRowSelect = (rowNumber: number, checked: boolean) => {
+    setSelectedRows((prev) =>
+      checked ? [...prev, rowNumber] : prev.filter((r) => r !== rowNumber)
+    );
+  };
+
+  const handleSelectAllValid = (checked: boolean) => {
+    const validRowNumbers = previewData
+      .filter((row) => row.isValid)
+      .map((row) => row.row);
+    setSelectedRows(checked ? validRowNumbers : []);
+  };
+
+  const allValidSelected =
+    previewData.length > 0 &&
+    selectedRows.length === previewData.filter((r) => r.isValid).length &&
+    previewData.filter((r) => r.isValid).length > 0;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -202,7 +232,6 @@ export default function UploadSchedule() {
         </p>
       </div>
 
-      {/* Template Download */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -219,7 +248,7 @@ export default function UploadSchedule() {
               <p className="text-sm text-muted-foreground">
                 Required columns:{" "}
                 <span className="font-mono bg-muted px-2 py-1 rounded">
-                  date, day, hours, hourly_rate
+                  date, hours, hourly_rate
                 </span>
               </p>
               <p className="text-sm text-muted-foreground">
@@ -237,7 +266,6 @@ export default function UploadSchedule() {
         </CardContent>
       </Card>
 
-      {/* Upload Area */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -248,9 +276,7 @@ export default function UploadSchedule() {
                   <Info className="h-4 w-4 text-muted-foreground cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>
-                    Drag and drop your Excel or CSV file, or click to browse
-                  </p>
+                  <p>Drag & drop or click to browse (.xlsx, .xls, .csv)</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -268,42 +294,69 @@ export default function UploadSchedule() {
                 : "border-muted-foreground/25"
             }`}
           >
-            <div className="flex flex-col items-center gap-4">
-              <Upload
-                className={`h-12 w-12 ${
-                  isDragging ? "text-primary" : "text-muted-foreground"
-                }`}
-              />
-              <div>
-                <p className="text-lg font-medium">Drop your file here</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  or click to browse
-                </p>
+            {uploadMutation.isPending ? (
+              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                <LoadingSpinner />
+                <p>Processing file...</p>
               </div>
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleFileInput}
-                className="hidden"
-                id="file-upload"
-              />
-              <label htmlFor="file-upload">
-                <Button variant="outline" asChild>
-                  <span>Browse Files</span>
-                </Button>
-              </label>
-            </div>
+            ) : (
+              <div className="flex flex-col items-center gap-4">
+                <Upload
+                  className={`h-12 w-12 ${
+                    isDragging ? "text-primary" : "text-muted-foreground"
+                  }`}
+                />
+                <div>
+                  <p className="text-lg font-medium">Drop your file here</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    or click to browse
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFileInput}
+                  className="hidden"
+                  id="file-upload"
+                />
+                <label htmlFor="file-upload">
+                  <Button variant="outline" type="button" asChild>
+                    <span>Browse Files</span>
+                  </Button>
+                </label>
+              </div>
+            )}
           </div>
+          {uploadedFile && !uploadMutation.isPending && (
+            <div className="mt-4 text-sm text-center text-muted-foreground">
+              Uploaded:{" "}
+              <span className="font-medium text-primary">
+                {uploadedFile.name}
+              </span>
+              <Button
+                variant="link"
+                size="sm"
+                className="ml-2 text-destructive"
+                onClick={() => {
+                  setUploadedFile(null);
+                  setPreviewData([]);
+                  setTempFileId(null);
+                  setSelectedRows([]);
+                }}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Preview Table */}
-      {uploadedFile && previewData.length > 0 && (
+      {previewData.length > 0 && tempFileId && (
         <Card>
           <CardHeader>
             <CardTitle>Preview & Validate</CardTitle>
             <CardDescription>
-              Review the first 10 rows. Fix any errors before importing.
+              Review the data below. Select the valid rows you wish to import.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -311,58 +364,117 @@ export default function UploadSchedule() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[50px]">
+                      <Checkbox
+                        checked={allValidSelected}
+                        onCheckedChange={(checked) =>
+                          handleSelectAllValid(checked as boolean)
+                        }
+                        disabled={
+                          previewData.filter((r) => r.isValid).length === 0
+                        }
+                      />
+                    </TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Row</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Day</TableHead>
                     <TableHead>Hours</TableHead>
                     <TableHead>Rate ($)</TableHead>
                     <TableHead>Tag</TableHead>
-                    <TableHead>Income</TableHead>
+                    <TableHead>Est. Income</TableHead>
+                    <TableHead>Errors</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {previewData.map((row, idx) => (
+                  {previewData.map((row) => (
                     <TableRow
-                      key={idx}
-                      className={
-                        row.status === "error" ? "bg-destructive/10" : ""
-                      }
+                      key={row.row}
+                      className={!row.isValid ? "bg-destructive/10" : ""}
                     >
                       <TableCell>
-                        {row.status === "valid" ? (
+                        <Checkbox
+                          checked={selectedRows.includes(row.row)}
+                          onCheckedChange={(checked) =>
+                            handleRowSelect(row.row, checked as boolean)
+                          }
+                          disabled={!row.isValid}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {row.isValid ? (
                           <CheckCircle className="h-5 w-5 text-success" />
                         ) : (
                           <AlertCircle className="h-5 w-5 text-destructive" />
                         )}
                       </TableCell>
-                      <TableCell>{row.date}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.row}
+                      </TableCell>
+                      <TableCell
+                        className={
+                          row.errors.some((e) => e.includes("date"))
+                            ? "text-destructive font-medium"
+                            : ""
+                        }
+                      >
+                        {row.date}
+                      </TableCell>
                       <TableCell>{row.day}</TableCell>
                       <TableCell
-                        className={!row.hours ? "text-destructive" : ""}
+                        className={
+                          row.errors.some((e) => e.includes("hours"))
+                            ? "text-destructive font-medium"
+                            : ""
+                        }
                       >
-                        {row.hours || "Missing"}
+                        {row.hours}
                       </TableCell>
-                      <TableCell>${row.rate}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{row.tag}</Badge>
+                      <TableCell
+                        className={
+                          row.errors.some((e) => e.includes("rate"))
+                            ? "text-destructive font-medium"
+                            : ""
+                        }
+                      >
+                        {typeof row.hourlyRate === "number"
+                          ? row.hourlyRate.toFixed(2)
+                          : row.hourlyRate}
                       </TableCell>
                       <TableCell>
-                        {row.hours
-                          ? `$${(row.hours * row.rate).toFixed(2)}`
+                        {row.tag && <Badge variant="outline">{row.tag}</Badge>}
+                      </TableCell>
+                      <TableCell>
+                        {row.isValid &&
+                        typeof row.hours === "number" &&
+                        typeof row.hourlyRate === "number"
+                          ? `$${(row.hours * row.hourlyRate).toFixed(2)}`
                           : "-"}
+                      </TableCell>
+                      <TableCell className="text-xs text-destructive">
+                        {row.errors.join(", ")}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
-            <div className="flex justify-between items-center mt-4">
+            <div className="flex justify-between items-center mt-6">
               <p className="text-sm text-muted-foreground">
-                {previewData.filter((r) => r.status === "valid").length} valid
-                entries,
-                {previewData.filter((r) => r.status === "error").length} errors
+                Selected {selectedRows.length} valid row(s) for import.
               </p>
-              <Button onClick={handleImport}>Import Schedule</Button>
+              <Button
+                onClick={handleImport}
+                disabled={
+                  confirmMutation.isPending || selectedRows.length === 0
+                }
+              >
+                {confirmMutation.isPending ? (
+                  <LoadingSpinner />
+                ) : (
+                  `Import ${selectedRows.length} Schedule(s)`
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>

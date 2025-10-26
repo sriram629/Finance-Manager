@@ -1,4 +1,5 @@
-import { useState } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -22,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { Info, Plus, Trash2, Upload } from "lucide-react";
+import { Info, Plus, Trash2, Upload, Loader2, Edit } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import {
   Table,
@@ -33,58 +34,197 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { Badge } from "../components/ui/badge";
+import api from "@/api/axios";
+import { AxiosResponse } from "axios";
 
-const mockExpenses = [
-  {
-    id: 1,
-    date: "2025-01-20",
-    place: "Gas Station",
-    category: "Transportation",
-    amount: 45.0,
-  },
-  {
-    id: 2,
-    date: "2025-01-21",
-    place: "Grocery Store",
-    category: "Food",
-    amount: 120.5,
-  },
-  {
-    id: 3,
-    date: "2025-01-22",
-    place: "Coffee Shop",
-    category: "Food",
-    amount: 8.75,
-  },
-  {
-    id: 4,
-    date: "2025-01-23",
-    place: "Pharmacy",
-    category: "Healthcare",
-    amount: 32.0,
-  },
-];
+const LoadingSpinner = () => <Loader2 className="h-5 w-5 animate-spin" />;
+
+interface Expense {
+  _id: string;
+  date: string;
+  place: string;
+  category?: string;
+  amount: number;
+  receiptUrl?: string;
+  notes?: string;
+}
+
+interface ExpenseFormData {
+  date: string;
+  place: string;
+  category: string;
+  amount: string;
+  notes?: string;
+  receipt?: File | null;
+}
+
+const initialFormData: ExpenseFormData = {
+  date: "",
+  place: "",
+  category: "",
+  amount: "",
+  notes: "",
+  receipt: null,
+};
 
 export default function Expenses() {
   const { toast } = useToast();
-  const [expenses, setExpenses] = useState(mockExpenses);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const [formData, setFormData] = useState<ExpenseFormData>(initialFormData);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    toast({
-      title: "Expense Added",
-      description: "Your expense has been recorded successfully.",
-    });
-    setShowForm(false);
+  useEffect(() => {
+    const fetchExpenses = async () => {
+      setFetching(true);
+      try {
+        const response = await api.get("/expenses");
+        if (response.data.success) {
+          setExpenses(response.data.expenses || []);
+        }
+      } catch (error) {
+        console.error("Failed to fetch expenses:", error);
+        toast({
+          title: "Error",
+          description: "Could not fetch expenses.",
+          variant: "destructive",
+        });
+      } finally {
+        setFetching(false);
+      }
+    };
+    fetchExpenses();
+  }, [toast]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { id, value } = e.target;
+    setFormData((prev) => ({ ...prev, [id]: value }));
   };
 
-  const handleDelete = (id: number) => {
-    setExpenses(expenses.filter((exp) => exp.id !== id));
-    toast({
-      title: "Expense Deleted",
-      description: "The expense has been removed.",
+  const handleSelectChange = (value: string) => {
+    setFormData((prev) => ({ ...prev, category: value }));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFormData((prev) => ({ ...prev, receipt: e.target.files![0] }));
+    } else {
+      setFormData((prev) => ({ ...prev, receipt: null }));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    const dataToSubmit = new FormData();
+    dataToSubmit.append("date", formData.date);
+    dataToSubmit.append("place", formData.place);
+    dataToSubmit.append("amount", formData.amount);
+    if (formData.category) dataToSubmit.append("category", formData.category);
+    if (formData.notes) dataToSubmit.append("notes", formData.notes);
+    if (formData.receipt) dataToSubmit.append("receipt", formData.receipt);
+
+    try {
+      let response: AxiosResponse<any>;
+      if (editingExpense) {
+        response = await api.put(
+          `/expenses/${editingExpense._id}`,
+          dataToSubmit,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+          }
+        );
+        if (response.data.success) {
+          toast({
+            title: "Expense Updated",
+            description: "Your expense has been saved successfully.",
+          });
+          setExpenses((prev) =>
+            prev.map((exp) =>
+              exp._id === editingExpense._id ? response.data.expense : exp
+            )
+          );
+          setEditingExpense(null);
+          setShowForm(false);
+          setFormData(initialFormData);
+        }
+      } else {
+        response = await api.post("/expenses", dataToSubmit, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        if (response.data.success) {
+          toast({
+            title: "Expense Added",
+            description: "Your expense has been recorded successfully.",
+          });
+          setExpenses((prev) => [response.data.expense, ...prev]);
+          setFormData(initialFormData);
+          setShowForm(false);
+        }
+      }
+    } catch (err: any) {
+      const action = editingExpense ? "Update" : "Add";
+      toast({
+        title: `Failed to ${action} Expense`,
+        description:
+          err.response?.data?.error || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const originalExpenses = [...expenses];
+    setExpenses((prev) => prev.filter((exp) => exp._id !== id));
+
+    try {
+      const response = await api.delete(`/expenses/${id}`);
+      if (!response.data.success) {
+        setExpenses(originalExpenses);
+        toast({
+          title: "Delete Failed",
+          description: response.data.error,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Expense Deleted",
+          description: "The expense has been removed.",
+        });
+      }
+    } catch (error: any) {
+      setExpenses(originalExpenses);
+      toast({
+        title: "Delete Failed",
+        description: "Could not delete expense.",
+        variant: "destructive",
+      });
+      console.error("Delete error:", error);
+    }
+  };
+
+  const handleEdit = (expense: Expense) => {
+    setEditingExpense(expense);
+    setFormData({
+      date: expense.date.split("T")[0],
+      place: expense.place,
+      category: expense.category || "",
+      amount: expense.amount.toString(),
+      notes: expense.notes || "",
+      receipt: null,
     });
+    setShowForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    setShowForm(false);
+    setEditingExpense(null);
+    setFormData(initialFormData);
   };
 
   const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -98,13 +238,18 @@ export default function Expenses() {
             Track and manage your daily expenses
           </p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)}>
+        <Button
+          onClick={() => {
+            setEditingExpense(null);
+            setFormData(initialFormData);
+            setShowForm(true);
+          }}
+        >
           <Plus className="mr-2 h-4 w-4" />
           Add Expense
         </Button>
       </div>
 
-      {/* Summary Card */}
       <Card>
         <CardHeader>
           <CardTitle>Expense Summary</CardTitle>
@@ -131,19 +276,24 @@ export default function Expenses() {
         </CardContent>
       </Card>
 
-      {/* Add Expense Form */}
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle>Add New Expense</CardTitle>
-            <CardDescription>Record a new expense transaction</CardDescription>
+            <CardTitle>
+              {editingExpense ? "Edit Expense" : "Add New Expense"}
+            </CardTitle>
+            <CardDescription>
+              {editingExpense
+                ? "Update the details of this expense."
+                : "Record a new expense transaction"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <Label htmlFor="exp-date">Date</Label>
+                    <Label htmlFor="date">Date</Label>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -155,7 +305,14 @@ export default function Expenses() {
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <Input id="exp-date" type="date" required />
+                  <Input
+                    id="date"
+                    type="date"
+                    required
+                    value={formData.date}
+                    onChange={handleInputChange}
+                    disabled={loading}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -176,26 +333,33 @@ export default function Expenses() {
                     id="place"
                     placeholder="e.g., Walmart, Gas Station"
                     required
+                    value={formData.place}
+                    onChange={handleInputChange}
+                    disabled={loading}
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="category">Category</Label>
-                  <Select>
+                  <Select
+                    value={formData.category}
+                    onValueChange={handleSelectChange}
+                    disabled={loading}
+                  >
                     <SelectTrigger id="category">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="food">Food & Dining</SelectItem>
-                      <SelectItem value="transportation">
+                      <SelectItem value="Food">Food & Dining</SelectItem>
+                      <SelectItem value="Transportation">
                         Transportation
                       </SelectItem>
-                      <SelectItem value="healthcare">Healthcare</SelectItem>
-                      <SelectItem value="utilities">Utilities</SelectItem>
-                      <SelectItem value="entertainment">
+                      <SelectItem value="Healthcare">Healthcare</SelectItem>
+                      <SelectItem value="Utilities">Utilities</SelectItem>
+                      <SelectItem value="Entertainment">
                         Entertainment
                       </SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -221,26 +385,60 @@ export default function Expenses() {
                     min="0"
                     placeholder="0.00"
                     required
+                    value={formData.amount}
+                    onChange={handleInputChange}
+                    disabled={loading}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="receipt">Receipt (Optional)</Label>
-                <div className="flex items-center gap-2">
-                  <Input id="receipt" type="file" accept="image/*,.pdf" />
-                  <Button type="button" variant="outline" size="icon">
-                    <Upload className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Label htmlFor="receipt">
+                  Receipt (Optional {editingExpense ? "- Replace Current" : ""})
+                </Label>
+                <Input
+                  id="receipt"
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={handleFileChange}
+                  disabled={loading}
+                />
+                {editingExpense?.receiptUrl && !formData.receipt && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Current receipt:{" "}
+                    <a
+                      href={editingExpense.receiptUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      {editingExpense.receiptUrl.split("/").pop()}
+                    </a>{" "}
+                    (Upload new file to replace)
+                  </p>
+                )}
+                {formData.receipt && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    New receipt selected: {formData.receipt.name}
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-2">
-                <Button type="submit">Add Expense</Button>
+                <Button type="submit" disabled={loading}>
+                  {loading ? (
+                    <LoadingSpinner />
+                  ) : editingExpense ? (
+                    "Save Changes"
+                  ) : (
+                    "Add Expense"
+                  )}
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setShowForm(false)}
+                  onClick={handleCancelEdit}
+                  disabled={loading}
                 >
                   Cancel
                 </Button>
@@ -250,7 +448,6 @@ export default function Expenses() {
         </Card>
       )}
 
-      {/* Expenses Table */}
       <Card>
         <CardHeader>
           <CardTitle>Recent Expenses</CardTitle>
@@ -259,42 +456,64 @@ export default function Expenses() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Place</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {expenses.map((expense) => (
-                  <TableRow key={expense.id}>
-                    <TableCell>{expense.date}</TableCell>
-                    <TableCell>{expense.place}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{expense.category}</Badge>
-                    </TableCell>
-                    <TableCell className="font-medium text-destructive">
-                      ${expense.amount.toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(expense.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
+          {fetching ? (
+            <LoadingSpinner />
+          ) : expenses.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              No expenses recorded yet.
+            </div>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Place</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {expenses.map((expense) => (
+                    <TableRow key={expense._id}>
+                      <TableCell>
+                        {new Date(expense.date).toLocaleDateString("en-US", {
+                          timeZone: "UTC",
+                        })}
+                      </TableCell>
+                      <TableCell>{expense.place}</TableCell>
+                      <TableCell>
+                        {expense.category && (
+                          <Badge variant="outline">{expense.category}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-medium text-destructive">
+                        ${expense.amount.toFixed(2)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="mr-1"
+                          onClick={() => handleEdit(expense)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(expense._id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
