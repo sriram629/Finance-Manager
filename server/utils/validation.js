@@ -50,6 +50,22 @@ const validationRules = (method) => {
         ).isLength({ min: 6 }),
       ];
     }
+    case "changePassword": {
+      return [
+        body("currentPassword", "Current password is required").exists(),
+        body(
+          "newPassword",
+          "New password must be at least 6 characters"
+        ).isLength({ min: 6 }),
+      ];
+    }
+    case "updateProfile": {
+      return [
+        body("email", "Please include a valid email").isEmail(),
+        body("firstName", "First name is required").not().isEmpty(),
+        body("lastName", "Last name is required").not().isEmpty(),
+      ];
+    }
   }
 };
 
