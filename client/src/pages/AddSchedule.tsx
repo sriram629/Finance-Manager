@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import {
@@ -105,13 +105,12 @@ export default function Schedules() {
     data: schedules = [],
     isLoading: isFetchingInitial,
     isFetching: isRefetching,
-    error: fetchError, // Get the error state
+    error: fetchError,
   } = useQuery<ISchedule[], Error>({
     queryKey: ["schedules", showFuture],
     queryFn: () => fetchSchedules(showFuture),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-    // Removed onError callback
   });
 
   const addMutation = useMutation({
@@ -295,14 +294,14 @@ export default function Schedules() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Schedules</h1>
           <p className="text-muted-foreground mt-2">
             Manage your work schedules and income
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end w-full sm:w-auto">
           <Button
             variant="outline"
             size="sm"

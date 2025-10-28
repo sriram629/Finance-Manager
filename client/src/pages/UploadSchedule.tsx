@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useCallback } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import axios, { AxiosError } from "axios";
+import { AxiosError } from "axios";
+import { saveAs } from "file-saver";
 import {
   Card,
   CardContent,
@@ -23,7 +23,6 @@ import {
   FileSpreadsheet,
   CheckCircle,
   AlertCircle,
-  Loader2,
 } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import {
@@ -34,10 +33,11 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "../components/ui/badge";
 import api from "@/api/axios";
 import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
+import { useQueryClient } from "@tanstack/react-query"; // Keep for invalidating cache
 
 interface PreviewRow {
   row: number;
@@ -58,68 +58,10 @@ export default function UploadSchedule() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
   const [tempFileId, setTempFileId] = useState<string | null>(null);
-  const [selectedRows, setSelectedRows] = useState<number[]>([]); // Store original row numbers (1-based)
+  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [isUploading, setIsUploading] = useState(false); // New loading state for upload
+  const [isConfirming, setIsConfirming] = useState(false); // New loading state for confirm
 
-  // --- Mutations ---
-  const uploadMutation = useMutation<any, AxiosError<any>, File>({
-    mutationFn: (file) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      return api.post("/schedules/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-    },
-    onSuccess: (data) => {
-      setPreviewData(data.data.preview || []);
-      setTempFileId(data.data.tempFileId);
-      // Automatically select all valid rows initially
-      const validRowNumbers = (data.data.preview || [])
-        .filter((row: PreviewRow) => row.isValid)
-        .map((row: PreviewRow) => row.row);
-      setSelectedRows(validRowNumbers);
-      toast({
-        title: "File Processed",
-        description: `Found ${data.data.valid} valid and ${data.data.invalid} invalid rows.`,
-      });
-    },
-    onError: (error) => {
-      setUploadedFile(null);
-      setPreviewData([]);
-      setTempFileId(null);
-      setSelectedRows([]);
-      toast({
-        title: "Upload Failed",
-        description: error.response?.data?.error || error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const confirmMutation = useMutation<
-    any,
-    AxiosError<any>,
-    { tempFileId: string; rowsToImport: number[] }
-  >({
-    mutationFn: (importData) =>
-      api.post("/schedules/confirm-upload", importData),
-    onSuccess: (data) => {
-      toast({ title: "Import Successful", description: data.data.message });
-      queryClient.invalidateQueries({ queryKey: ["schedules"] }); // Invalidate schedules query
-      setUploadedFile(null);
-      setPreviewData([]);
-      setTempFileId(null);
-      setSelectedRows([]);
-    },
-    onError: (error) => {
-      toast({
-        title: "Import Failed",
-        description: error.response?.data?.error || error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // --- Event Handlers ---
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -129,6 +71,45 @@ export default function UploadSchedule() {
     setIsDragging(false);
   }, []);
 
+  // --- New Async function for file upload ---
+  const handleFileUpload = async (file: File) => {
+    setIsUploading(true);
+    setPreviewData([]);
+    setTempFileId(null);
+    setSelectedRows([]);
+    setUploadedFile(file); // Show filename while uploading
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await api.post("/schedules/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const data = response.data;
+      setPreviewData(data.preview || []);
+      setTempFileId(data.tempFileId);
+      const validRowNumbers = (data.preview || [])
+        .filter((row: PreviewRow) => row.isValid)
+        .map((row: PreviewRow) => row.row);
+      setSelectedRows(validRowNumbers);
+      toast({
+        title: "File Processed",
+        description: `Found ${data.valid} valid and ${data.invalid} invalid rows.`,
+      });
+    } catch (error) {
+      const axiosError = error as AxiosError<any>;
+      setUploadedFile(null); // Clear file on error
+      toast({
+        title: "Upload Failed",
+        description: axiosError.response?.data?.error || axiosError.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const processFile = (file: File | null) => {
     if (
       file &&
@@ -136,11 +117,7 @@ export default function UploadSchedule() {
         file.name.endsWith(".csv") ||
         file.name.endsWith(".xls"))
     ) {
-      setUploadedFile(file);
-      setPreviewData([]); // Clear previous preview
-      setTempFileId(null);
-      setSelectedRows([]);
-      uploadMutation.mutate(file); // Trigger mutation
+      handleFileUpload(file); // Call the async upload function
     } else if (file) {
       toast({
         title: "Invalid File Type",
@@ -150,26 +127,24 @@ export default function UploadSchedule() {
     }
   };
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
-      const files = Array.from(e.dataTransfer.files);
-      processFile(files[0]);
-    },
-    [uploadMutation, toast]
-  );
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    processFile(files[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Removed dependencies as processFile now calls handleFileUpload
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     processFile(file || null);
-    e.target.value = ""; // Reset file input
+    e.target.value = "";
   };
 
   const handleDownloadTemplate = async () => {
     try {
       const response = await api.get("/schedules/template", {
-        responseType: "blob", // Important for file downloads
+        responseType: "blob",
       });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
@@ -193,16 +168,39 @@ export default function UploadSchedule() {
     }
   };
 
-  const handleImport = () => {
+  // --- New Async function for confirm import ---
+  const handleConfirmImport = async () => {
     if (!tempFileId || selectedRows.length === 0) {
       toast({
         title: "No Rows Selected",
-        description: "Please select at least one valid row to import.",
+        description: "Please select valid rows.",
         variant: "destructive",
       });
       return;
     }
-    confirmMutation.mutate({ tempFileId, rowsToImport: selectedRows });
+    setIsConfirming(true);
+    try {
+      const response = await api.post("/schedules/confirm-upload", {
+        tempFileId,
+        rowsToImport: selectedRows,
+      });
+      const data = response.data;
+      toast({ title: "Import Successful", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      setUploadedFile(null);
+      setPreviewData([]);
+      setTempFileId(null);
+      setSelectedRows([]);
+    } catch (error) {
+      const axiosError = error as AxiosError<any>;
+      toast({
+        title: "Import Failed",
+        description: axiosError.response?.data?.error || axiosError.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsConfirming(false);
+    }
   };
 
   const handleRowSelect = (rowNumber: number, checked: boolean) => {
@@ -246,13 +244,13 @@ export default function UploadSchedule() {
           <div className="flex items-start gap-4">
             <div className="flex-1 space-y-2">
               <p className="text-sm text-muted-foreground">
-                Required columns:{" "}
+                Required:{" "}
                 <span className="font-mono bg-muted px-2 py-1 rounded">
                   date, hours, hourly_rate
                 </span>
               </p>
               <p className="text-sm text-muted-foreground">
-                Optional columns:{" "}
+                Optional:{" "}
                 <span className="font-mono bg-muted px-2 py-1 rounded">
                   tag, notes
                 </span>
@@ -276,7 +274,7 @@ export default function UploadSchedule() {
                   <Info className="h-4 w-4 text-muted-foreground cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Drag & drop or click to browse (.xlsx, .xls, .csv)</p>
+                  <p>Drag & drop or click (.xlsx, .xls, .csv)</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -294,7 +292,7 @@ export default function UploadSchedule() {
                 : "border-muted-foreground/25"
             }`}
           >
-            {uploadMutation.isPending ? (
+            {isUploading ? (
               <div className="flex flex-col items-center gap-2 text-muted-foreground">
                 <LoadingSpinner />
                 <p>Processing file...</p>
@@ -327,7 +325,7 @@ export default function UploadSchedule() {
               </div>
             )}
           </div>
-          {uploadedFile && !uploadMutation.isPending && (
+          {uploadedFile && !isUploading && (
             <div className="mt-4 text-sm text-center text-muted-foreground">
               Uploaded:{" "}
               <span className="font-medium text-primary">
@@ -356,7 +354,7 @@ export default function UploadSchedule() {
           <CardHeader>
             <CardTitle>Preview & Validate</CardTitle>
             <CardDescription>
-              Review the data below. Select the valid rows you wish to import.
+              Review the data. Select valid rows to import.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -461,15 +459,13 @@ export default function UploadSchedule() {
             </div>
             <div className="flex justify-between items-center mt-6">
               <p className="text-sm text-muted-foreground">
-                Selected {selectedRows.length} valid row(s) for import.
+                Selected {selectedRows.length} valid row(s).
               </p>
               <Button
-                onClick={handleImport}
-                disabled={
-                  confirmMutation.isPending || selectedRows.length === 0
-                }
+                onClick={handleConfirmImport}
+                disabled={isConfirming || selectedRows.length === 0}
               >
-                {confirmMutation.isPending ? (
+                {isConfirming ? (
                   <LoadingSpinner />
                 ) : (
                   `Import ${selectedRows.length} Schedule(s)`
