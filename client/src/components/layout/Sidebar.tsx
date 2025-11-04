@@ -5,11 +5,13 @@ import {
   Receipt,
   FileDown,
   Settings,
-  User,
   CalendarPlus,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../../lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/api/axios";
+import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -17,20 +19,62 @@ interface SidebarProps {
 
 const navItems = [
   { icon: Home, label: "Dashboard", path: "/home" },
-  { icon: CalendarPlus, label: "Add Schedule", path: "/add-schedule" },
+  { icon: Calendar, label: "Schedules", path: "/add-schedule" },
   { icon: Upload, label: "Upload Schedule", path: "/upload-schedule" },
   { icon: Receipt, label: "Expenses", path: "/expenses" },
   { icon: FileDown, label: "Reports", path: "/reports" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
-const summaryData = {
-  weekIncome: "$850",
-  monthIncome: "$3,400",
-  netProfit: "$612",
+interface IKPIs {
+  totalIncome: number;
+  monthlyIncome: number;
+  totalExpenses: number;
+  netProfit: number;
+}
+interface IDashboardData {
+  kpis: IKPIs;
+}
+
+const fetchDashboard = async (period: string): Promise<IDashboardData> => {
+  const response = await api.get(`/reports/dashboard?period=${period}`);
+  if (response.data.success) {
+    return response.data;
+  }
+  throw new Error(response.data.error || "Failed to fetch dashboard data");
+};
+
+const formatCurrency = (value?: number) => {
+  if (value === undefined || value === null) {
+    return <span className="text-xs text-muted-foreground">...</span>;
+  }
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
 };
 
 export const Sidebar = ({ isOpen }: SidebarProps) => {
+  const { data: weekData, isLoading: isLoadingWeek } = useQuery<
+    IDashboardData,
+    Error
+  >({
+    queryKey: ["dashboard", "week"],
+    queryFn: () => fetchDashboard("week"),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const { data: monthData, isLoading: isLoadingMonth } = useQuery<
+    IDashboardData,
+    Error
+  >({
+    queryKey: ["dashboard", "month"],
+    queryFn: () => fetchDashboard("month"),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
   return (
     <aside
       className={cn(
@@ -75,19 +119,25 @@ export const Sidebar = ({ isOpen }: SidebarProps) => {
             <div className="flex justify-between items-center">
               <span className="text-xs text-muted-foreground">This Week</span>
               <span className="text-sm font-semibold text-success">
-                {summaryData.weekIncome}
+                {isLoadingWeek
+                  ? "..."
+                  : formatCurrency(weekData?.kpis.totalIncome)}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-muted-foreground">This Month</span>
               <span className="text-sm font-semibold text-success">
-                {summaryData.monthIncome}
+                {isLoadingMonth
+                  ? "..."
+                  : formatCurrency(monthData?.kpis.totalIncome)}
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-xs text-muted-foreground">Net Profit</span>
+              <span className="text-xs text-muted-foreground">Month Net</span>
               <span className="text-sm font-semibold text-primary">
-                {summaryData.netProfit}
+                {isLoadingMonth
+                  ? "..."
+                  : formatCurrency(monthData?.kpis.netProfit)}
               </span>
             </div>
           </div>
