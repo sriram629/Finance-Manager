@@ -5,6 +5,17 @@ const { uploadReceipt } = require("../middleware/uploadMiddleware");
 const Expense = require("../models/Expense");
 const mongoose = require("mongoose");
 const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
+
+const deleteReceiptFile = (receiptUrl) => {
+  if (!receiptUrl) return;
+  const filePath = path.join(process.cwd(), receiptUrl);
+  fs.unlink(filePath, (err) => {
+    if (err) console.error(`Failed to delete receipt file: ${filePath}`, err);
+    else console.log(`Deleted receipt file: ${filePath}`);
+  });
+};
 
 router.get("/", protect, async (req, res, next) => {
   try {
@@ -50,12 +61,10 @@ router.post(
     try {
       const { date, place, category, amount, notes } = req.body;
       if (!date || !place || !amount) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            error: "Date, place, and amount are required",
-          });
+        return res.status(400).json({
+          success: false,
+          error: "Date, place, and amount are required",
+        });
       }
       let receiptUrl = null;
       if (req.file) {
@@ -71,13 +80,11 @@ router.post(
         notes,
       });
       const savedExpense = await newExpense.save();
-      res
-        .status(201)
-        .json({
-          success: true,
-          expense: savedExpense,
-          message: "Expense added successfully",
-        });
+      res.status(201).json({
+        success: true,
+        expense: savedExpense,
+        message: "Expense added successfully",
+      });
     } catch (error) {
       if (
         error.code === "LIMIT_FILE_SIZE" ||
@@ -106,22 +113,27 @@ router.put(
       }
       const expense = await Expense.findOne({ _id: expenseId, user: userId });
       if (!expense) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-            error: "Expense not found or permission denied",
-          });
+        return res.status(404).json({
+          success: false,
+          error: "Expense not found or permission denied",
+        });
       }
+
+      const oldReceiptUrl = expense.receiptUrl;
+
       if (date) expense.date = new Date(date);
       if (place) expense.place = place;
       if (category !== undefined) expense.category = category || null;
       if (amount) expense.amount = Number(amount);
       if (notes !== undefined) expense.notes = notes || null;
+
       if (req.file) {
-        // TODO: Delete old file if expense.receiptUrl exists
         expense.receiptUrl = `/uploads/${req.file.filename}`;
+        if (oldReceiptUrl) {
+          deleteReceiptFile(oldReceiptUrl);
+        }
       }
+
       const updatedExpense = await expense.save();
       res.json({
         success: true,
@@ -151,14 +163,16 @@ router.delete("/:id", protect, async (req, res, next) => {
     }
     const expense = await Expense.findOne({ _id: expenseId, user: userId });
     if (!expense) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          error: "Expense not found or permission denied",
-        });
+      return res.status(404).json({
+        success: false,
+        error: "Expense not found or permission denied",
+      });
     }
-    // TODO: Delete receipt file if expense.receiptUrl exists
+
+    if (expense.receiptUrl) {
+      deleteReceiptFile(expense.receiptUrl);
+    }
+
     await expense.deleteOne();
     res.json({ success: true, message: "Expense deleted successfully" });
   } catch (error) {

@@ -67,7 +67,6 @@ export const Sidebar = ({ isOpen }: SidebarProps) => {
           ))}
         </nav>
 
-        {/* Quick Summary */}
         <div className="p-4 border-t border-sidebar-border space-y-3">
           <div className="text-xs font-semibold text-muted-foreground mb-2">
             QUICK SUMMARY

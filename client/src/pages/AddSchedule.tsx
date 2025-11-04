@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import {
@@ -118,6 +118,7 @@ export default function Schedules() {
     onSuccess: (data) => {
       toast({ title: "Schedule Added", description: data.data.message });
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setFormData(initialFormData);
       setShowForm(false);
     },
@@ -144,6 +145,7 @@ export default function Schedules() {
         description: "Your changes have been saved.",
       });
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setFormData(initialFormData);
       setShowForm(false);
       setEditingSchedule(null);
@@ -165,6 +167,7 @@ export default function Schedules() {
         description: "The entry has been removed.",
       });
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
     onError: (error: AxiosError<any>) => {
       toast({
@@ -451,8 +454,8 @@ export default function Schedules() {
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>
-                            Applies this schedule to selected days weekly for
-                            the next month
+                            Applies this schedule to selected days for this week
+                            only
                           </p>
                         </TooltipContent>
                       </Tooltip>
@@ -527,7 +530,9 @@ export default function Schedules() {
             </div>
           )}
           {isFetchingInitial && !fetchError && schedules.length === 0 ? (
-            <LoadingSpinner />
+            <div className="flex justify-center py-20">
+              <LoadingSpinner />
+            </div>
           ) : !fetchError && schedules.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No schedules recorded yet. Click "Add Schedule" to start.

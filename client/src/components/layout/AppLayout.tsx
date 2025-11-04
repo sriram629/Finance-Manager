@@ -7,7 +7,6 @@ import { cn } from "../../lib/utils";
 export const AppLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Check if user is authenticated
   const isAuthenticated = localStorage.getItem("authToken");
 
   if (!isAuthenticated) {
@@ -18,8 +17,6 @@ export const AppLayout = () => {
     <div className="min-h-screen bg-background">
       <Navbar onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
       <Sidebar isOpen={sidebarOpen} />
-
-      {/* Overlay for mobile - appears behind sidebar but above content */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-background/80 backdrop-blur-sm z-20 lg:hidden top-16"

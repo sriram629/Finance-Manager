@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError, AxiosResponse } from "axios";
 import {
   Card,
@@ -37,6 +38,17 @@ import {
 import { Badge } from "../components/ui/badge";
 import api from "@/api/axios";
 import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Expense {
   _id: string;
@@ -66,44 +78,107 @@ const initialFormData: ExpenseFormData = {
   receipt: null,
 };
 
+const fetchExpenses = async (): Promise<Expense[]> => {
+  const response = await api.get("/expenses");
+  if (response.data.success) {
+    return response.data.expenses || [];
+  }
+  throw new Error(response.data.error || "Could not fetch expenses.");
+};
+
 export default function Expenses() {
   const { toast } = useToast();
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(true);
-  const [formData, setFormData] = useState<ExpenseFormData>(initialFormData);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [formData, setFormData] = useState<ExpenseFormData>(initialFormData);
 
-  useEffect(() => {
-    const fetchExpenses = async () => {
-      setFetching(true);
-      try {
-        const response = await api.get("/expenses");
-        if (response.data.success) {
-          setExpenses(response.data.expenses || []);
-        } else {
-          setExpenses([]);
-          toast({
-            title: "Error",
-            description: response.data.error || "Could not fetch expenses.",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        console.error("Failed to fetch expenses:", error);
-        toast({
-          title: "Error",
-          description: "Could not fetch expenses.",
-          variant: "destructive",
-        });
-        setExpenses([]);
-      } finally {
-        setFetching(false);
-      }
-    };
-    fetchExpenses();
-  }, [toast]);
+  const {
+    data: expenses = [],
+    isLoading: isFetchingExpenses,
+    isFetching: isRefetching,
+    error: fetchError,
+  } = useQuery<Expense[], Error>({
+    queryKey: ["expenses"],
+    queryFn: fetchExpenses,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (newExpense: FormData) =>
+      api.post("/expenses", newExpense, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }),
+    onSuccess: (data) => {
+      toast({
+        title: "Expense Added",
+        description: "Expense recorded successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setFormData(initialFormData);
+      setShowForm(false);
+    },
+    onError: (error: AxiosError<any>) => {
+      toast({
+        title: "Failed to Add Expense",
+        description:
+          error.response?.data?.error || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({
+      id,
+      updatedExpense,
+    }: {
+      id: string;
+      updatedExpense: FormData;
+    }) =>
+      api.put(`/expenses/${id}`, updatedExpense, {
+        headers: { "Content-Type": "multipart/form-data" },
+      }),
+    onSuccess: (data) => {
+      toast({
+        title: "Expense Updated",
+        description: "Expense saved successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setEditingExpense(null);
+      setShowForm(false);
+      setFormData(initialFormData);
+    },
+    onError: (error: AxiosError<any>) => {
+      toast({
+        title: "Update Failed",
+        description: error.response?.data?.error || "An error occurred.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/expenses/${id}`),
+    onSuccess: () => {
+      toast({
+        title: "Expense Deleted",
+        description: "The expense has been removed.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error: AxiosError<any>) => {
+      toast({
+        title: "Delete Failed",
+        description: error.response?.data?.error || "Could not delete expense.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { id, value } = e.target;
@@ -124,7 +199,6 @@ export default function Expenses() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
 
     const dataToSubmit = new FormData();
     dataToSubmit.append("date", formData.date);
@@ -134,95 +208,18 @@ export default function Expenses() {
     if (formData.notes) dataToSubmit.append("notes", formData.notes);
     if (formData.receipt) dataToSubmit.append("receipt", formData.receipt);
 
-    try {
-      let response: AxiosResponse<any>;
-      if (editingExpense) {
-        response = await api.put(
-          `/expenses/${editingExpense._id}`,
-          dataToSubmit,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
-        if (response.data.success) {
-          toast({
-            title: "Expense Updated",
-            description: "Expense saved successfully.",
-          });
-          setExpenses((prev) =>
-            prev.map((exp) =>
-              exp._id === editingExpense._id ? response.data.expense : exp
-            )
-          );
-        }
-      } else {
-        response = await api.post("/expenses", dataToSubmit, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        if (response.data.success) {
-          toast({
-            title: "Expense Added",
-            description: "Expense recorded successfully.",
-          });
-          setExpenses((prev) => [response.data.expense, ...prev]);
-        }
-      }
-
-      if (response.data.success) {
-        setEditingExpense(null);
-        setShowForm(false);
-        setFormData(initialFormData);
-      } else {
-        // If API returns success: false, show the error
-        const action = editingExpense ? "Update" : "Add";
-        toast({
-          title: `Failed to ${action} Expense`,
-          description: response.data.error || "An unexpected error occurred.",
-          variant: "destructive",
-        });
-      }
-    } catch (err) {
-      const error = err as AxiosError<any>; // Type assertion
-      const action = editingExpense ? "Update" : "Add";
-      toast({
-        title: `Failed to ${action} Expense`,
-        description:
-          error.response?.data?.error || "An unexpected error occurred.",
-        variant: "destructive",
+    if (editingExpense) {
+      updateMutation.mutate({
+        id: editingExpense._id,
+        updatedExpense: dataToSubmit,
       });
-    } finally {
-      setLoading(false);
+    } else {
+      addMutation.mutate(dataToSubmit);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const originalExpenses = [...expenses];
-    setExpenses((prev) => prev.filter((exp) => exp._id !== id));
-
-    try {
-      const response = await api.delete(`/expenses/${id}`);
-      if (!response.data.success) {
-        setExpenses(originalExpenses);
-        toast({
-          title: "Delete Failed",
-          description: response.data.error,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Expense Deleted",
-          description: "The expense has been removed.",
-        });
-      }
-    } catch (error) {
-      const axiosError = error as AxiosError<any>;
-      setExpenses(originalExpenses);
-      toast({
-        title: "Delete Failed",
-        description:
-          axiosError.response?.data?.error || "Could not delete expense.",
-        variant: "destructive",
-      });
-      console.error("Delete error:", error);
-    }
+  const handleDelete = (id: string) => {
+    deleteMutation.mutate(id);
   };
 
   const handleEdit = (expense: Expense) => {
@@ -251,6 +248,11 @@ export default function Expenses() {
     return sum;
   }, 0);
 
+  const isMutating =
+    addMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex justify-between items-center">
@@ -264,8 +266,9 @@ export default function Expenses() {
           onClick={() => {
             setEditingExpense(null);
             setFormData(initialFormData);
-            setShowForm(!showForm); // Toggle form visibility
+            setShowForm(!showForm);
           }}
+          disabled={isMutating}
         >
           <Plus className="mr-2 h-4 w-4" />
           {showForm ? "Cancel" : "Add Expense"}
@@ -333,7 +336,7 @@ export default function Expenses() {
                     required
                     value={formData.date}
                     onChange={handleInputChange}
-                    disabled={loading}
+                    disabled={isMutating}
                   />
                 </div>
                 <div className="space-y-2">
@@ -356,7 +359,7 @@ export default function Expenses() {
                     required
                     value={formData.place}
                     onChange={handleInputChange}
-                    disabled={loading}
+                    disabled={isMutating}
                   />
                 </div>
                 <div className="space-y-2">
@@ -364,7 +367,7 @@ export default function Expenses() {
                   <Select
                     value={formData.category}
                     onValueChange={handleSelectChange}
-                    disabled={loading}
+                    disabled={isMutating}
                   >
                     <SelectTrigger id="category">
                       <SelectValue placeholder="Select category" />
@@ -406,7 +409,7 @@ export default function Expenses() {
                     required
                     value={formData.amount}
                     onChange={handleInputChange}
-                    disabled={loading}
+                    disabled={isMutating}
                   />
                 </div>
               </div>
@@ -419,7 +422,7 @@ export default function Expenses() {
                   type="file"
                   accept="image/*,.pdf"
                   onChange={handleFileChange}
-                  disabled={loading}
+                  disabled={isMutating}
                 />
                 {editingExpense?.receiptUrl && !formData.receipt && (
                   <p className="text-sm text-muted-foreground mt-1">
@@ -441,8 +444,8 @@ export default function Expenses() {
                 )}
               </div>
               <div className="flex gap-2">
-                <Button type="submit" disabled={loading}>
-                  {loading ? (
+                <Button type="submit" disabled={isMutating}>
+                  {isMutating ? (
                     <LoadingSpinner />
                   ) : editingExpense ? (
                     "Save Changes"
@@ -454,7 +457,7 @@ export default function Expenses() {
                   type="button"
                   variant="outline"
                   onClick={handleCancelEdit}
-                  disabled={loading}
+                  disabled={isMutating}
                 >
                   Cancel
                 </Button>
@@ -470,15 +473,29 @@ export default function Expenses() {
           <CardDescription>View and manage history</CardDescription>
         </CardHeader>
         <CardContent>
-          {fetching ? (
-            <LoadingSpinner />
-          ) : expenses.length === 0 ? (
+          {fetchError && (
+            <div className="text-center py-12 text-destructive">
+              Error loading expenses: {fetchError.message}
+            </div>
+          )}
+          {isFetchingExpenses && !fetchError && expenses.length === 0 ? (
+            <div className="flex justify-center py-20">
+              <LoadingSpinner />
+            </div>
+          ) : !fetchError && expenses.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No expenses recorded yet.
             </div>
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="rounded-md border overflow-x-auto relative">
+              {isRefetching && (
+                <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10">
+                  <LoadingSpinner />
+                </div>
+              )}
+              <Table
+                className={isRefetching ? "opacity-50 pointer-events-none" : ""}
+              >
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
@@ -513,16 +530,53 @@ export default function Expenses() {
                             size="icon"
                             className="mr-1"
                             onClick={() => handleEdit(expense)}
+                            disabled={isMutating}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(expense._id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="text-destructive"
+                                disabled={
+                                  isMutating || deleteMutation.isPending
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Are you sure?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete this expense.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel
+                                  disabled={deleteMutation.isPending}
+                                >
+                                  Cancel
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDelete(expense._id)}
+                                  className="bg-destructive hover:bg-destructive/90"
+                                  disabled={deleteMutation.isPending}
+                                >
+                                  {deleteMutation.isPending &&
+                                  deleteMutation.variables === expense._id ? (
+                                    <LoadingSpinner />
+                                  ) : (
+                                    "Delete"
+                                  )}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </TableCell>
                       </TableRow>
                     );

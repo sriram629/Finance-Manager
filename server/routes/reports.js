@@ -9,41 +9,55 @@ const xlsx = require("xlsx");
 const getPeriod = (period, startDate, endDate) => {
   let start, end;
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
+
+  const currentUTCDate = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const currentUTCDay = currentUTCDate.getUTCDay();
 
   switch (period) {
     case "month":
-      start = new Date(now.getFullYear(), now.getMonth(), 1);
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      end.setHours(23, 59, 59, 999);
+      start = new Date(
+        Date.UTC(
+          currentUTCDate.getUTCFullYear(),
+          currentUTCDate.getUTCMonth(),
+          1
+        )
+      );
+      end = new Date(
+        Date.UTC(
+          currentUTCDate.getUTCFullYear(),
+          currentUTCDate.getUTCMonth() + 1,
+          0
+        )
+      );
+      end.setUTCHours(23, 59, 59, 999);
       break;
     case "last4weeks":
-      end = new Date();
-      end.setHours(23, 59, 59, 999);
-      start = new Date();
-      start.setDate(now.getDate() - 28 + 1);
-      start.setHours(0, 0, 0, 0);
+      end = new Date(currentUTCDate);
+      end.setUTCHours(23, 59, 59, 999);
+      start = new Date(currentUTCDate);
+      start.setUTCDate(currentUTCDate.getUTCDate() - 28 + 1);
       break;
     case "custom":
       if (startDate && endDate) {
         start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
+        start.setUTCHours(0, 0, 0, 0);
         end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
+        end.setUTCHours(23, 59, 59, 999);
       } else {
         throw new Error("Custom date range requires start and end dates.");
       }
       break;
     case "week":
     default:
-      start = new Date();
-      start.setDate(
-        start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1)
-      );
-      start.setHours(0, 0, 0, 0);
+      const dayOffset = currentUTCDay === 0 ? -6 : 1;
+      start = new Date(currentUTCDate);
+      start.setUTCDate(currentUTCDate.getUTCDate() - currentUTCDay + dayOffset);
+
       end = new Date(start);
-      end.setDate(end.getDate() + 6);
-      end.setHours(23, 59, 59, 999);
+      end.setUTCDate(start.getUTCDate() + 6);
+      end.setUTCHours(23, 59, 59, 999);
       break;
   }
   if (isNaN(start) || isNaN(end) || start > end) {
@@ -60,11 +74,11 @@ router.get("/dashboard", protect, async (req, res, next) => {
 
     const schedules = await Schedule.find({
       user: userId,
-      date: { $gte: start, $lt: end },
+      date: { $gte: start, $lte: end },
     });
     const expenses = await Expense.find({
       user: userId,
-      date: { $gte: start, $lt: end },
+      date: { $gte: start, $lte: end },
     });
 
     const totalIncome = schedules.reduce((acc, s) => {
@@ -80,35 +94,29 @@ router.get("/dashboard", protect, async (req, res, next) => {
       {
         $match: {
           user: userId,
-          date: { $gte: start, $lt: end },
+          date: { $gte: start, $lte: end },
           scheduleType: "hourly",
         },
       },
       {
         $project: {
-          dayOfWeek: { $dayOfWeek: "$date" },
+          dayOfWeek: { $dayOfWeek: { date: "$date", timezone: "UTC" } },
           calculatedPay: { $multiply: ["$hours", "$hourlyRate"] },
         },
       },
       { $group: { _id: "$dayOfWeek", income: { $sum: "$calculatedPay" } } },
       { $sort: { _id: 1 } },
     ]);
+
     const dayMap = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const weeklyIncomeChart = dayMap
-      .map((day, index) => {
-        const found = weeklyIncomeByDay.find((d) => d._id === index + 1);
-        return { day: day, income: found ? found.income : 0 };
-      })
-      .slice(1)
-      .concat(
-        dayMap.map((day, index) => {
-          const found = weeklyIncomeByDay.find((d) => d._id === index + 1);
-          return { day: day, income: found ? found.income : 0 };
-        })[0]
-      );
+    const mappedData = dayMap.map((day, index) => {
+      const found = weeklyIncomeByDay.find((d) => d._id === index + 1);
+      return { day: day, income: found ? found.income : 0 };
+    });
+    const weeklyIncomeChart = mappedData.slice(1).concat(mappedData[0]);
 
     const expensesByCategory = await Expense.aggregate([
-      { $match: { user: userId, date: { $gte: start, $lt: end } } },
+      { $match: { user: userId, date: { $gte: start, $lte: end } } },
       {
         $group: {
           _id: { $ifNull: ["$category", "Uncategorized"] },
@@ -118,12 +126,66 @@ router.get("/dashboard", protect, async (req, res, next) => {
       { $project: { name: "$_id", value: "$amount", _id: 0 } },
     ]);
 
-    const monthlyTrend = [
-      { week: "Week 1", income: 0, expenses: 0 },
-      { week: "Week 2", income: 0, expenses: 0 },
-      { week: "Week 3", income: 0, expenses: 0 },
-      { week: "Week 4", income: 0, expenses: 0 },
-    ];
+    const scheduleTrend = await Schedule.aggregate([
+      {
+        $match: {
+          user: userId,
+          date: { $gte: start, $lte: end },
+          scheduleType: "hourly",
+        },
+      },
+      {
+        $project: {
+          week: {
+            $floor: {
+              $divide: [
+                { $subtract: ["$date", start] },
+                1000 * 60 * 60 * 24 * 7,
+              ],
+            },
+          },
+          calculatedPay: { $multiply: ["$hours", "$hourlyRate"] },
+        },
+      },
+      { $group: { _id: "$week", income: { $sum: "$calculatedPay" } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const expenseTrend = await Expense.aggregate([
+      { $match: { user: userId, date: { $gte: start, $lte: end } } },
+      {
+        $project: {
+          week: {
+            $floor: {
+              $divide: [
+                { $subtract: ["$date", start] },
+                1000 * 60 * 60 * 24 * 7,
+              ],
+            },
+          },
+          amount: "$amount",
+        },
+      },
+      { $group: { _id: "$week", expenses: { $sum: "$amount" } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const numWeeks =
+      period === "month" || period === "last4weeks" || period === "custom"
+        ? Math.ceil(
+            (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 7)
+          )
+        : 1;
+    const monthlyTrend = [];
+    for (let i = 0; i < numWeeks; i++) {
+      const incomeData = scheduleTrend.find((s) => s._id === i);
+      const expenseData = expenseTrend.find((e) => e._id === i);
+      monthlyTrend.push({
+        week: `Week ${i + 1}`,
+        income: incomeData ? incomeData.income : 0,
+        expenses: expenseData ? expenseData.expenses : 0,
+      });
+    }
 
     res.json({
       success: true,
@@ -155,12 +217,10 @@ router.post("/generate", protect, async (req, res, next) => {
         .json({ success: false, error: "PDF format not supported." });
     }
     if (period === "custom" && (!startDate || !endDate)) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: "Custom date range requires start and end dates.",
-        });
+      return res.status(400).json({
+        success: false,
+        error: "Custom date range requires start and end dates.",
+      });
     }
 
     const { start, end } = getPeriod(period, startDate, endDate);
@@ -290,12 +350,10 @@ router.post("/generate", protect, async (req, res, next) => {
     }
 
     if (dataToExport.length === 0) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          error: "No data found for the selected criteria.",
-        });
+      return res.status(404).json({
+        success: false,
+        error: "No data found for the selected criteria.",
+      });
     }
 
     if (reportType !== "combined") {
@@ -375,6 +433,36 @@ router.get("/quick-export", protect, (req, res) => {
     success: true,
     message: "GET /quick-export not implemented",
   });
+});
+
+router.get("/summary", protect, async (req, res, next) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.user.id);
+
+    const schedules = await Schedule.find({ user: userId });
+    const expenses = await Expense.find({ user: userId });
+
+    const totalIncome = schedules.reduce((acc, s) => {
+      if (s.scheduleType === "hourly" && s.hours && s.hourlyRate) {
+        return acc + s.hours * s.hourlyRate;
+      }
+      return acc;
+    }, 0);
+
+    const totalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
+    const netProfit = totalIncome - totalExpenses;
+
+    res.json({
+      success: true,
+      summary: {
+        totalIncome,
+        totalExpenses,
+        netProfit,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = router;

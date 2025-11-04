@@ -1,6 +1,9 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "../components/ui/card";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 import {
   Select,
   SelectContent,
@@ -80,100 +83,116 @@ export interface ISchedule {
   scheduleType: "hourly" | "monthly";
 }
 
+const fetchDashboard = async (
+  period: string,
+  startDate?: string,
+  endDate?: string
+): Promise<IDashboardData> => {
+  const params = new URLSearchParams({ period });
+  if (period === "custom" && startDate && endDate) {
+    params.append("startDate", startDate);
+    params.append("endDate", endDate);
+  }
+  const response = await api.get(`/reports/dashboard?${params.toString()}`);
+  if (response.data.success) {
+    return response.data;
+  }
+  throw new Error(response.data.error || "Failed to fetch dashboard data");
+};
+
+const fetchSchedules = async (
+  includeFuture: boolean,
+  period: string,
+  startDate?: string,
+  endDate?: string
+): Promise<ISchedule[]> => {
+  const params = new URLSearchParams({ includeFuture: String(includeFuture) });
+  if (period === "custom" && startDate && endDate) {
+    params.append("startDate", startDate);
+    params.append("endDate", endDate);
+  }
+
+  const response = await api.get(`/schedules?${params.toString()}`);
+  if (response.data.success && Array.isArray(response.data.schedules)) {
+    return response.data.schedules;
+  }
+  throw new Error(response.data.error || "Failed to fetch schedules");
+};
+
 export default function Home() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [period, setPeriod] = useState("week");
   const [showFuture, setShowFuture] = useState(false);
-  const [loadingInitial, setLoadingInitial] = useState(true);
-  const [loadingSchedules, setLoadingSchedules] = useState(false);
-  const [dashboardData, setDashboardData] = useState<IDashboardData | null>(
-    null
-  );
-  const [schedules, setSchedules] = useState<ISchedule[]>([]);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const isCustomRangeReady = period === "custom" && !!startDate && !!endDate;
+  const isQueryEnabled = period !== "custom" || isCustomRangeReady;
+
+  const {
+    data: dashboardData,
+    isLoading: isLoadingDashboard,
+    error: dashboardError,
+  } = useQuery<IDashboardData, Error>({
+    queryKey: ["dashboard", period, startDate, endDate],
+    queryFn: () => fetchDashboard(period, startDate, endDate),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: isQueryEnabled,
+  });
+
+  const {
+    data: schedules = [],
+    isLoading: isLoadingSchedules,
+    isFetching: isRefetchingSchedules,
+    error: schedulesError,
+  } = useQuery<ISchedule[], Error>({
+    queryKey: ["schedules", showFuture, period, startDate, endDate],
+    queryFn: () => fetchSchedules(showFuture, period, startDate, endDate),
+    staleTime: 1 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    enabled: isQueryEnabled,
+  });
 
   const PIE_COLORS = ["#8b5cf6", "#ec4899", "#f97316", "#3b82f6", "#10b981"];
-
-  useEffect(() => {
-    let isMounted = true; // Flag to prevent state updates on unmounted component
-
-    const fetchDashboard = async () => {
-      try {
-        const res = await api.get(`/reports/dashboard?period=${period}`);
-        if (isMounted && res.data.success) {
-          setDashboardData(res.data);
-        }
-      } catch (error) {
-        console.error("Failed to fetch dashboard data:", error);
-        if (isMounted) {
-          toast({
-            title: "Error",
-            description: "Could not fetch dashboard data.",
-            variant: "destructive",
-          });
-        }
-      }
-    };
-
-    const fetchSchedulesData = async () => {
-      if (!isMounted) return; // Don't fetch if unmounted
-      setLoadingSchedules(true); // Start schedule-specific loading
-      try {
-        const res = await api.get(`/schedules?includeFuture=${showFuture}`);
-        if (isMounted && res.data.success) {
-          setSchedules(
-            Array.isArray(res.data.schedules) ? res.data.schedules : []
-          );
-        } else if (isMounted) {
-          setSchedules([]);
-        }
-      } catch (error) {
-        console.error("Failed to fetch schedules:", error);
-        if (isMounted) {
-          toast({
-            title: "Error",
-            description: "Could not fetch schedules.",
-            variant: "destructive",
-          });
-          setSchedules([]);
-        }
-      } finally {
-        if (isMounted) {
-          setLoadingSchedules(false); // Stop schedule-specific loading
-        }
-      }
-    };
-
-    const loadInitialData = async () => {
-      if (!isMounted) return;
-      setLoadingInitial(true); // Start initial page loading
-      await Promise.all([fetchDashboard(), fetchSchedulesData()]);
-      if (isMounted) {
-        setLoadingInitial(false); // Stop initial page loading
-      }
-    };
-
-    if (loadingInitial) {
-      loadInitialData(); // Load everything on first mount
-    } else {
-      // Only refetch what changed (dashboard on period change, schedules on showFuture change)
-      if (isMounted) {
-        // Ensure component is still mounted before potential refetch triggers
-        fetchDashboard(); // Refetch dashboard if period changes
-        fetchSchedulesData(); // Refetch schedules if showFuture changes
-      }
-    }
-
-    return () => {
-      isMounted = false; // Cleanup function to set flag on unmount
-    };
-  }, [period, showFuture, toast, loadingInitial]); // Rerun effect when period or showFuture changes
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
     }).format(value ?? 0);
+  };
+
+  const isLoadingInitial = isLoadingDashboard || isLoadingSchedules;
+
+  useEffect(() => {
+    if (dashboardError) {
+      toast({
+        title: "Error",
+        description:
+          dashboardError.message || "Could not fetch dashboard data.",
+        variant: "destructive",
+      });
+    }
+  }, [dashboardError, toast]);
+
+  useEffect(() => {
+    if (schedulesError) {
+      toast({
+        title: "Error",
+        description: schedulesError.message || "Could not fetch schedules.",
+        variant: "destructive",
+      });
+    }
+  }, [schedulesError, toast]);
+
+  const handlePeriodChange = (value: string) => {
+    setPeriod(value);
+    if (value !== "custom") {
+      setStartDate("");
+      setEndDate("");
+    }
   };
 
   return (
@@ -187,34 +206,76 @@ export default function Home() {
             Here's your financial and schedule overview.
           </p>
         </div>
-        <Select
-          value={period}
-          onValueChange={setPeriod}
-          disabled={loadingInitial || loadingSchedules}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Select period" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="week">This Week</SelectItem>
-            <SelectItem value="month">This Month</SelectItem>
-            <SelectItem value="custom" disabled>
-              Custom Range
-            </SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Select
+            value={period}
+            onValueChange={handlePeriodChange}
+            disabled={
+              isLoadingInitial || isLoadingDashboard || isRefetchingSchedules
+            }
+          >
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Select period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+              <SelectItem value="custom">Custom Range</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {loadingInitial ? (
-        <LoadingSpinner />
-      ) : !dashboardData ? (
+      {period === "custom" && (
+        <Card className="p-4 bg-card/40 backdrop-blur-sm border-border/50">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="startDate-dash">Start Date</Label>
+              <Input
+                id="startDate-dash"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                disabled={isLoadingDashboard || isRefetchingSchedules}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="endDate-dash">End Date</Label>
+              <Input
+                id="endDate-dash"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                disabled={isLoadingDashboard || isRefetchingSchedules}
+              />
+            </div>
+          </div>
+          {(!startDate || !endDate) && (
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Please select a start and end date to load data.
+            </p>
+          )}
+        </Card>
+      )}
+
+      {isLoadingInitial ? (
+        <div className="flex justify-center py-20">
+          <LoadingSpinner />
+        </div>
+      ) : !dashboardData || dashboardError ? (
         <Card className="p-6 bg-card/40 backdrop-blur-sm border-border/50">
-          <EmptyState
-            title="No data to display"
-            description="Add a schedule or expense to get started."
-            link="/schedules"
-            linkText="Add First Schedule"
-          />
+          {dashboardError ? (
+            <div className="text-center py-12 text-destructive">
+              Error loading dashboard data. {dashboardError.message}
+            </div>
+          ) : (
+            <EmptyState
+              title="No data to display"
+              description="Add a schedule or expense."
+              link="/schedules"
+              linkText="Add Schedule"
+            />
+          )}
         </Card>
       ) : (
         <>
@@ -369,21 +430,33 @@ export default function Home() {
                 variant="outline"
                 size="sm"
                 onClick={() => setShowFuture(!showFuture)}
-                disabled={loadingInitial || loadingSchedules}
+                disabled={
+                  isLoadingInitial ||
+                  isLoadingSchedules ||
+                  isRefetchingSchedules
+                }
               >
                 <Calendar className="h-4 w-4 mr-2" />
                 {showFuture ? "Hide" : "Show"} Future
               </Button>
             </div>
             <div className="overflow-x-auto relative min-h-[100px]">
-              {loadingSchedules && (
+              {isRefetchingSchedules && (
                 <div className="absolute inset-0 bg-background/50 flex items-center justify-center z-10 rounded-md">
                   <LoadingSpinner />
                 </div>
               )}
-              {schedules?.length > 0 ? (
+              {schedulesError ? (
+                <div className="text-center py-12 text-destructive">
+                  Error loading schedules.
+                </div>
+              ) : schedules?.length > 0 ? (
                 <table
-                  className={`w-full ${loadingSchedules ? "opacity-50" : ""}`}
+                  className={`w-full ${
+                    isRefetchingSchedules
+                      ? "opacity-50 pointer-events-none"
+                      : ""
+                  }`}
                 >
                   <thead>
                     <tr className="border-b border-border/50">
@@ -444,11 +517,12 @@ export default function Home() {
               ) : (
                 <div
                   className={`text-center py-12 text-muted-foreground ${
-                    loadingSchedules ? "opacity-50" : ""
+                    isRefetchingSchedules ? "opacity-50" : ""
                   }`}
                 >
-                  No schedules found for this period. Add one via the Schedules
-                  page!
+                  {isLoadingSchedules
+                    ? "Loading schedules..."
+                    : "No schedules found for this period."}
                 </div>
               )}
             </div>

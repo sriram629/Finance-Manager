@@ -18,20 +18,16 @@ export const OTPInput = ({
 
   const handleChange = (index: number, value: string) => {
     if (disabled) return;
-
-    // Only allow digits
     const digit = value.replace(/\D/g, "").slice(-1);
 
     const newOtp = [...otp];
     newOtp[index] = digit;
     setOtp(newOtp);
 
-    // Auto-focus next input
     if (digit && index < length - 1) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Check if complete
     if (newOtp.every((d) => d !== "") && newOtp.join("").length === length) {
       onComplete(newOtp.join(""));
     }
@@ -61,11 +57,9 @@ export const OTPInput = ({
 
     setOtp(newOtp);
 
-    // Focus last filled input or next empty
     const lastFilledIndex = Math.min(pastedData.length, length - 1);
     inputRefs.current[lastFilledIndex]?.focus();
 
-    // Check if complete
     if (newOtp.every((d) => d !== "") && newOtp.join("").length === length) {
       onComplete(newOtp.join(""));
     }
