@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   Card,
   CardContent,
@@ -17,6 +18,8 @@ import { useAuth } from "@/context/AuthContext";
 import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
 import { useState } from "react";
 import api from "@/api/axios";
+import { AxiosError } from "axios";
+import { saveAs } from "file-saver";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -35,6 +38,7 @@ export default function Settings() {
   });
   const [profileLoading, setProfileLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const handleProfileSave = async () => {
     setProfileLoading(true);
@@ -47,11 +51,11 @@ export default function Settings() {
           description: "Your details have been saved.",
         });
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
+      const error = err as AxiosError<any>;
       toast({
         title: "Update Failed",
-        description: err.response?.data?.error || "Could not save profile.",
+        description: error.response?.data?.error || "Could not save profile.",
         variant: "destructive",
       });
     } finally {
@@ -107,11 +111,12 @@ export default function Settings() {
           confirmPassword: "",
         });
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
+      const error = err as AxiosError<any>;
       toast({
         title: "Update Failed",
-        description: err.response?.data?.error || "Could not update password.",
+        description:
+          error.response?.data?.error || "Could not update password.",
         variant: "destructive",
       });
     } finally {
@@ -121,19 +126,40 @@ export default function Settings() {
 
   const handleLogout = () => {
     logout();
-    localStorage.removeItem("authToken");
     toast({
       title: "Logged Out",
       description: "You have been logged out successfully.",
     });
-    navigate("/login");
   };
 
-  const handleExportData = () => {
-    toast({
-      title: "Data Export Started",
-      description: "Your complete data export will be ready shortly.",
-    });
+  const handleExportData = async () => {
+    setIsExporting(true);
+    try {
+      const response = await api.get("/user/export-data", {
+        responseType: "blob",
+      });
+
+      const filename = `finance_manager_export_${user?.email || "user"}_${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+
+      saveAs(new Blob([response.data], { type: "application/json" }), filename);
+
+      toast({
+        title: "Data Export Started",
+        description: "Your complete data export is downloading.",
+      });
+    } catch (error) {
+      const axiosError = error as AxiosError<any>;
+      toast({
+        title: "Export Failed",
+        description:
+          axiosError.response?.data?.error || "Could not export data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -145,7 +171,6 @@ export default function Settings() {
         </p>
       </div>
 
-      {/* Profile Settings */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -155,7 +180,6 @@ export default function Settings() {
           <CardDescription>Update your personal details</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* --- This UI is CHANGED to split First/Last Name --- */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="firstName">First Name</Label>
@@ -198,7 +222,6 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Notifications */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -240,7 +263,6 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Security */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -303,7 +325,6 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Data Management */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -320,15 +341,22 @@ export default function Settings() {
                 Download a complete copy of your financial data
               </p>
             </div>
-            <Button variant="outline" onClick={handleExportData}>
-              <Download className="mr-2 h-4 w-4" />
+            <Button
+              variant="outline"
+              onClick={handleExportData}
+              disabled={isExporting}
+            >
+              {isExporting ? (
+                <LoadingSpinner />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
               Export
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Account Actions */}
       <Card className="border-destructive">
         <CardHeader>
           <CardTitle>Account Actions</CardTitle>

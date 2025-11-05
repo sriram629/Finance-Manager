@@ -50,66 +50,40 @@ export default function Reports() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [quickExportLoading, setQuickExportLoading] = useState<string | null>(
+    null
+  );
 
-  const handleDownload = async () => {
-    if (!reportType || !period || !format) {
-      toast({
-        title: "Missing Options",
-        description: "Please select report type, period, and format.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (period === "custom" && (!startDate || !endDate)) {
-      toast({
-        title: "Missing Dates",
-        description: "Please select a start and end date for custom range.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (period === "custom" && new Date(startDate) > new Date(endDate)) {
-      toast({
-        title: "Invalid Date Range",
-        description: "Start date cannot be after end date.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsDownloading(true);
-
+  const handleFileDownload = async (
+    apiCall: () => Promise<any>,
+    defaultFilename: string
+  ) => {
     try {
-      const params = {
-        reportType,
-        format,
-        period,
-        ...(period === "custom" && { startDate, endDate }),
-      };
+      const response = await apiCall();
+      const format = defaultFilename.split(".").pop() || "xlsx";
 
-      const response = await api.post("/reports/generate", params, {
-        responseType: "blob",
+      const blob = new Blob([response.data], {
+        type: response.headers["content-type"],
       });
 
-      const fileExtension = format === "xlsx" ? "xlsx" : "csv";
-      let filename = `report_${reportType}_${period}`;
-      if (period === "custom" && startDate && endDate) {
-        filename += `_${startDate}_to_${endDate}`;
-      } else {
-        filename += `_${new Date().toISOString().split("T")[0]}`;
+      let filename = defaultFilename;
+      const contentDisposition = response.headers["content-disposition"];
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+        if (filenameMatch.length > 1) {
+          filename = filenameMatch[1];
+        }
       }
-      filename += `.${fileExtension}`;
 
-      saveAs(response.data, filename);
+      saveAs(blob, filename);
 
       toast({
         title: "Report Download Started",
-        description: `Your ${reportType} report is downloading as ${format.toUpperCase()}.`,
+        description: `Your ${filename} report is downloading.`,
       });
     } catch (error) {
       const axiosError = error as AxiosError<any>;
       const reader = new FileReader();
-
       reader.onload = () => {
         try {
           const errorData = JSON.parse(reader.result as string);
@@ -133,7 +107,6 @@ export default function Reports() {
           variant: "destructive",
         });
       };
-
       if (axiosError.response?.data instanceof Blob) {
         reader.readAsText(axiosError.response.data);
       } else {
@@ -146,9 +119,63 @@ export default function Reports() {
           variant: "destructive",
         });
       }
-    } finally {
-      setIsDownloading(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!reportType || !period || !format) {
+      toast({
+        title: "Missing Options",
+        description: "Please select all options.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (period === "custom" && (!startDate || !endDate)) {
+      toast({
+        title: "Missing Dates",
+        description: "Please select start and end dates.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (period === "custom" && new Date(startDate) > new Date(endDate)) {
+      toast({
+        title: "Invalid Date Range",
+        description: "Start date cannot be after end date.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsDownloading(true);
+    const params = {
+      reportType,
+      format,
+      period,
+      ...(period === "custom" && { startDate, endDate }),
+    };
+    const defaultFilename = `report_${reportType}_${period}.${format}`;
+    await handleFileDownload(
+      () => api.post("/reports/generate", params, { responseType: "blob" }),
+      defaultFilename
+    );
+    setIsDownloading(false);
+  };
+
+  const handleQuickExport = async (
+    preset: string,
+    format: string,
+    reportType: string,
+    defaultFilename: string
+  ) => {
+    setQuickExportLoading(preset);
+    const params = { preset, format, reportType };
+    await handleFileDownload(
+      () => api.get("/reports/quick-export", { params, responseType: "blob" }),
+      defaultFilename
+    );
+    setQuickExportLoading(null);
   };
 
   const getFormatIcon = (fmt: string) => {
@@ -224,7 +251,7 @@ export default function Reports() {
             </TabsList>
 
             <TabsContent value="schedule" className="space-y-4">
-              <div className="grid grid-rows-1 sm:grid-rows-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Label>Time Period</Label>
@@ -268,9 +295,7 @@ export default function Reports() {
                     <SelectContent>
                       <SelectItem value="csv">CSV</SelectItem>
                       <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
-                      <SelectItem value="pdf" disabled>
-                        PDF (Soon)
-                      </SelectItem>
+                      <SelectItem value="pdf">PDF Document</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -287,7 +312,7 @@ export default function Reports() {
             </TabsContent>
 
             <TabsContent value="expenses" className="space-y-4">
-              <div className="grid grid-rows-1 sm:grid-rows-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Label>Time Period</Label>
@@ -331,9 +356,7 @@ export default function Reports() {
                     <SelectContent>
                       <SelectItem value="csv">CSV</SelectItem>
                       <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
-                      <SelectItem value="pdf" disabled>
-                        PDF (Soon)
-                      </SelectItem>
+                      <SelectItem value="pdf">PDF Document</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -350,7 +373,7 @@ export default function Reports() {
             </TabsContent>
 
             <TabsContent value="combined" className="space-y-4">
-              <div className="grid grid-rows-1 sm:grid-rows-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Label>Time Period</Label>
@@ -394,9 +417,7 @@ export default function Reports() {
                     <SelectContent>
                       <SelectItem value="csv">CSV</SelectItem>
                       <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
-                      <SelectItem value="pdf" disabled>
-                        PDF (Soon)
-                      </SelectItem>
+                      <SelectItem value="pdf">PDF Document</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -432,7 +453,7 @@ export default function Reports() {
         <CardHeader>
           <CardTitle>Quick Export</CardTitle>
           <CardDescription>
-            Common report templates (Not implemented)
+            Common report templates for quick access
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -440,26 +461,50 @@ export default function Reports() {
             <Button
               variant="outline"
               className="h-auto p-4 justify-start"
-              disabled
+              onClick={() =>
+                handleQuickExport(
+                  "weekly-summary",
+                  "xlsx",
+                  "combined",
+                  "weekly_summary.xlsx"
+                )
+              }
+              disabled={isDownloading || !!quickExportLoading}
             >
-              <div className="text-left">
-                <p className="font-medium">Weekly Summary</p>
-                <p className="text-sm text-muted-foreground">
-                  Current week income & expenses
-                </p>
-              </div>
+              {quickExportLoading === "weekly-summary" ? (
+                <LoadingSpinner />
+              ) : (
+                <div className="text-left">
+                  <p className="font-medium">Weekly Summary</p>
+                  <p className="text-sm text-muted-foreground">
+                    Current week income & expenses
+                  </p>
+                </div>
+              )}
             </Button>
             <Button
               variant="outline"
               className="h-auto p-4 justify-start"
-              disabled
+              onClick={() =>
+                handleQuickExport(
+                  "monthly-overview",
+                  "xlsx",
+                  "combined",
+                  "monthly_overview.xlsx"
+                )
+              }
+              disabled={isDownloading || !!quickExportLoading}
             >
-              <div className="text-left">
-                <p className="font-medium">Monthly Overview</p>
-                <p className="text-sm text-muted-foreground">
-                  This month's financial summary
-                </p>
-              </div>
+              {quickExportLoading === "monthly-overview" ? (
+                <LoadingSpinner />
+              ) : (
+                <div className="text-left">
+                  <p className="font-medium">Monthly Overview</p>
+                  <p className="text-sm text-muted-foreground">
+                    This month's financial summary
+                  </p>
+                </div>
+              )}
             </Button>
             <Button
               variant="outline"
