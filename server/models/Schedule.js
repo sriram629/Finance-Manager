@@ -22,7 +22,6 @@ const ScheduleSchema = new mongoose.Schema(
   }
 );
 
-// Index as per your spec
 ScheduleSchema.index({ user: 1, date: 1 });
 
 module.exports = mongoose.model("Schedule", ScheduleSchema);

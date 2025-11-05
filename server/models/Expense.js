@@ -15,7 +15,6 @@ const ExpenseSchema = new mongoose.Schema(
   }
 );
 
-// Index as per your spec
 ExpenseSchema.index({ user: 1, date: 1 });
 
 module.exports = mongoose.model("Expense", ExpenseSchema);

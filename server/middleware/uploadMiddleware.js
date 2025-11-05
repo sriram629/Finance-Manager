@@ -1,7 +1,6 @@
 const multer = require("multer");
 const path = require("path");
 
-// Configure storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, process.env.UPLOAD_DIR || "uploads/");
@@ -15,7 +14,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter for receipts (images/pdf)
 const receiptFileFilter = (req, file, cb) => {
   const filetypes = /jpeg|jpg|png|pdf/;
   const mimetype = filetypes.test(file.mimetype);
@@ -27,7 +25,6 @@ const receiptFileFilter = (req, file, cb) => {
   cb(new Error("File type not supported. Only images and PDFs are allowed."));
 };
 
-// File filter for schedule uploads (excel/csv)
 const scheduleFileFilter = (req, file, cb) => {
   const filetypes = /xlsx|xls|csv/;
   const mimetype =
@@ -51,13 +48,13 @@ const scheduleFileFilter = (req, file, cb) => {
 const uploadReceipt = multer({
   storage: storage,
   fileFilter: receiptFileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit from spec
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 const uploadSchedule = multer({
   storage: storage,
   fileFilter: scheduleFileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit from spec
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
 module.exports = { uploadReceipt, uploadSchedule };

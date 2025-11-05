@@ -11,6 +11,293 @@ const fs = require("fs");
 
 const uploadCache = new Map();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Schedules
+ *   description: Schedule management and uploads
+ */
+
+/**
+ * @swagger
+ * /api/user/schedules:
+ *   get:
+ *     summary: Get all schedules
+ *     description: Retrieve user schedules with optional date range and future schedule filtering.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: startDate
+ *         in: query
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Start date filter (YYYY-MM-DD)
+ *       - name: endDate
+ *         in: query
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: End date filter (YYYY-MM-DD)
+ *       - name: includeFuture
+ *         in: query
+ *         schema:
+ *           type: string
+ *           enum: [true, false]
+ *         description: Include future schedules
+ *     responses:
+ *       200:
+ *         description: List of schedules with summary
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 schedules:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Schedule'
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     totalHours:
+ *                       type: number
+ *                     totalPay:
+ *                       type: number
+ *                     daysWorked:
+ *                       type: number
+ */
+
+/**
+ * @swagger
+ * /api/user/schedules:
+ *   post:
+ *     summary: Create new schedule(s)
+ *     description: Add a new schedule. Supports repeating weekly schedules on specific weekdays.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *               scheduleType:
+ *                 type: string
+ *                 enum: [hourly, monthly]
+ *               hours:
+ *                 type: number
+ *               hourlyRate:
+ *                 type: number
+ *               monthlySalary:
+ *                 type: number
+ *               tag:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *               repeatWeekly:
+ *                 type: boolean
+ *               repeatWeekdays:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       201:
+ *         description: Schedule(s) created successfully
+ *       400:
+ *         description: Validation errors
+ */
+
+/**
+ * @swagger
+ * /api/user/schedules/{id}:
+ *   put:
+ *     summary: Update schedule
+ *     description: Update schedule fields by ID.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Schedule ID
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               date:
+ *                 type: string
+ *                 format: date
+ *               scheduleType:
+ *                 type: string
+ *                 enum: [hourly, monthly]
+ *               hours:
+ *                 type: number
+ *               hourlyRate:
+ *                 type: number
+ *               monthlySalary:
+ *                 type: number
+ *               tag:
+ *                 type: string
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Schedule updated successfully
+ *       400:
+ *         description: Invalid ID or data
+ *       404:
+ *         description: Schedule not found
+ */
+
+/**
+ * @swagger
+ * /api/user/schedules/{id}:
+ *   delete:
+ *     summary: Delete schedule
+ *     description: Delete a schedule by ID.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         description: Schedule ID
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Schedule deleted successfully
+ *       400:
+ *         description: Invalid schedule ID
+ *       404:
+ *         description: Schedule not found
+ */
+
+/**
+ * @swagger
+ * /api/user/schedules/upload:
+ *   post:
+ *     summary: Upload schedule Excel file
+ *     description: Upload an XLSX file to preview schedules before confirming import.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: File preview generated successfully
+ *       400:
+ *         description: Validation errors or empty file
+ */
+
+/**
+ * @swagger
+ * /api/user/schedules/confirm-upload:
+ *   post:
+ *     summary: Confirm schedule upload
+ *     description: Confirm and import valid schedule rows from a previous file upload session.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               tempFileId:
+ *                 type: string
+ *               rowsToImport:
+ *                 type: array
+ *                 items:
+ *                   type: number
+ *     responses:
+ *       200:
+ *         description: Schedules imported successfully
+ *       400:
+ *         description: No valid rows selected
+ *       404:
+ *         description: Upload session expired
+ */
+
+/**
+ * @swagger
+ * /api/user/schedules/template:
+ *   get:
+ *     summary: Download schedule template
+ *     description: Download an Excel template for schedule uploads.
+ *     tags: [Schedules]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: XLSX file with template
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Schedule:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *         user:
+ *           type: string
+ *         date:
+ *           type: string
+ *           format: date
+ *         dayOfWeek:
+ *           type: string
+ *         scheduleType:
+ *           type: string
+ *           enum: [hourly, monthly]
+ *         hours:
+ *           type: number
+ *         hourlyRate:
+ *           type: number
+ *         monthlySalary:
+ *           type: number
+ *         tag:
+ *           type: string
+ *         notes:
+ *           type: string
+ *         isFuture:
+ *           type: boolean
+ *         calculatedPay:
+ *           type: number
+ */
+
 router.get("/", protect, async (req, res, next) => {
   try {
     const { startDate, endDate, includeFuture = "false" } = req.query;

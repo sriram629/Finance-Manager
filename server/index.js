@@ -1,32 +1,32 @@
 if (process.env.NODE_ENV !== "production") {
   require("dotenv").config();
 }
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const connectDB = require("./config/db");
-const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const swaggerUi = require("swagger-ui-express");
-const swaggerSpec = require("./config/swagger"); // Import your config
+const swaggerSpec = require("./config/swagger");
+const { notFound, errorHandler } = require("./middleware/errorMiddleware");
+const { protect } = require("./middleware/authMiddleware");
 
-// Connect to Database
 connectDB();
 
 const app = express();
 
-// Middleware
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGINS,
+    origin: process.env.ALLOWED_ORIGINS?.split(",") || "*",
+    credentials: true,
   })
 );
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Make 'uploads' folder static
-app.use("/uploads", express.static(path.join(__dirname, "/uploads")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// --- API Routes ---
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
@@ -38,19 +38,19 @@ app.get("/api/health", (req, res) => {
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use("/api/auth", require("./routes/auth"));
-app.use("/api/user", require("./routes/user"));
-app.use("/api/schedules", require("./routes/schedules"));
-app.use("/api/expenses", require("./routes/expenses"));
-app.use("/api/reports", require("./routes/reports"));
 
-// TODO: Add Swagger Docs Endpoint
-// app.use('/api/docs', ...);
+app.use("/api/user", protect, require("./routes/user"));
+app.use("/api/schedules", protect, require("./routes/schedules"));
+app.use("/api/expenses", protect, require("./routes/expenses"));
+app.use("/api/reports", protect, require("./routes/reports"));
 
-// --- Error Handling Middleware ---
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5050;
+
 app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(
+    `✅ Server running in ${process.env.NODE_ENV} mode on port ${PORT}`
+  );
 });
