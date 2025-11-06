@@ -396,141 +396,6 @@ const generateExpenseTable = (doc, expenses) => {
   doc.y = y + rowHeight;
 };
 
-router.get("/dashboard", protect, async (req, res, next) => {
-  try {
-    const userId = new mongoose.Types.ObjectId(req.user.id);
-    const { period = "week", startDate, endDate } = req.query;
-    const { start, end } = getPeriod(period, startDate, endDate);
-
-    const schedules = await Schedule.find({
-      user: userId,
-      date: { $gte: start, $lte: end },
-    });
-    const expenses = await Expense.find({
-      user: userId,
-      date: { $gte: start, $lte: end },
-    });
-
-    const totalIncome = schedules.reduce((acc, s) => {
-      if (s.scheduleType === "hourly" && s.hours && s.hourlyRate) {
-        return acc + s.hours * s.hourlyRate;
-      }
-      return acc;
-    }, 0);
-    const totalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
-    const netProfit = totalIncome - totalExpenses;
-
-    const weeklyIncomeByDay = await Schedule.aggregate([
-      {
-        $match: {
-          user: userId,
-          date: { $gte: start, $lte: end },
-          scheduleType: "hourly",
-        },
-      },
-      {
-        $project: {
-          dayOfWeek: { $dayOfWeek: { date: "$date", timezone: "UTC" } },
-          calculatedPay: { $multiply: ["$hours", "$hourlyRate"] },
-        },
-      },
-      { $group: { _id: "$dayOfWeek", income: { $sum: "$calculatedPay" } } },
-      { $sort: { _id: 1 } },
-    ]);
-
-    const dayMap = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const mappedData = dayMap.map((day, index) => {
-      const found = weeklyIncomeByDay.find((d) => d._id === index + 1);
-      return { day: day, income: found ? found.income : 0 };
-    });
-    const weeklyIncomeChart = mappedData.slice(1).concat(mappedData[0]);
-
-    const expensesByCategory = await Expense.aggregate([
-      { $match: { user: userId, date: { $gte: start, $lte: end } } },
-      {
-        $group: {
-          _id: { $ifNull: ["$category", "Uncategorized"] },
-          amount: { $sum: "$amount" },
-        },
-      },
-      { $project: { name: "$_id", value: "$amount", _id: 0 } },
-    ]);
-
-    const scheduleTrend = await Schedule.aggregate([
-      {
-        $match: {
-          user: userId,
-          date: { $gte: start, $lte: end },
-          scheduleType: "hourly",
-        },
-      },
-      {
-        $project: {
-          week: {
-            $floor: {
-              $divide: [
-                { $subtract: ["$date", start] },
-                1000 * 60 * 60 * 24 * 7,
-              ],
-            },
-          },
-          calculatedPay: { $multiply: ["$hours", "$hourlyRate"] },
-        },
-      },
-      { $group: { _id: "$week", income: { $sum: "$calculatedPay" } } },
-      { $sort: { _id: 1 } },
-    ]);
-
-    const expenseTrend = await Expense.aggregate([
-      { $match: { user: userId, date: { $gte: start, $lte: end } } },
-      {
-        $project: {
-          week: {
-            $floor: {
-              $divide: [
-                { $subtract: ["$date", start] },
-                1000 * 60 * 60 * 24 * 7,
-              ],
-            },
-          },
-          amount: "$amount",
-        },
-      },
-      { $group: { _id: "$week", expenses: { $sum: "$amount" } } },
-      { $sort: { _id: 1 } },
-    ]);
-
-    const numWeeks =
-      period === "month" || period === "last4weeks" || period === "custom"
-        ? Math.ceil(
-            (end.getTime() - start.getTime() + 1) / (1000 * 60 * 60 * 24 * 7)
-          )
-        : 1;
-    const monthlyTrend = [];
-    for (let i = 0; i < numWeeks; i++) {
-      const incomeData = scheduleTrend.find((s) => s._id === i);
-      const expenseData = expenseTrend.find((e) => e._id === i);
-      monthlyTrend.push({
-        week: `Week ${i + 1}`,
-        income: incomeData ? incomeData.income : 0,
-        expenses: expenseData ? expenseData.expenses : 0,
-      });
-    }
-
-    res.json({
-      success: true,
-      kpis: { totalIncome, monthlyIncome: 0, totalExpenses, netProfit },
-      charts: {
-        weeklyIncomeByDay: weeklyIncomeChart,
-        expensesByCategory,
-        monthlyTrend,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
 const generateReportData = async (
   userId,
   reportType,
@@ -708,6 +573,155 @@ const generateReportData = async (
   return { dataToExport, headers, schedules, expenses, start, end };
 };
 
+router.get("/dashboard", protect, async (req, res, next) => {
+  try {
+    const userId = new mongoose.Types.ObjectId(req.user.id);
+    const { period = "week", startDate, endDate } = req.query;
+
+    const { start, end } = getPeriod(period, startDate, endDate);
+
+    const schedules = await Schedule.find({
+      user: userId,
+      date: { $gte: start, $lte: end },
+    });
+    const expenses = await Expense.find({
+      user: userId,
+      date: { $gte: start, $lte: end },
+    });
+
+    const totalIncome = schedules.reduce((acc, s) => {
+      if (s.scheduleType === "hourly" && s.hours && s.hourlyRate) {
+        return acc + s.hours * s.hourlyRate;
+      }
+      return acc;
+    }, 0);
+    const totalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
+    const netProfit = totalIncome - totalExpenses;
+
+    const numDaysInPeriod =
+      (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24) + 1;
+    const averageDailyIncome = totalIncome / (numDaysInPeriod || 1) || 0;
+    const estimatedMonthlyIncome = averageDailyIncome * 30.4375;
+
+    const weeklyIncomeByDay = await Schedule.aggregate([
+      {
+        $match: {
+          user: userId,
+          date: { $gte: start, $lte: end },
+          scheduleType: "hourly",
+        },
+      },
+      {
+        $project: {
+          dayOfWeek: { $dayOfWeek: { date: "$date", timezone: "UTC" } },
+          calculatedPay: { $multiply: ["$hours", "$hourlyRate"] },
+        },
+      },
+      { $group: { _id: "$dayOfWeek", income: { $sum: "$calculatedPay" } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const dayMap = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const mappedData = dayMap.map((day, index) => {
+      const found = weeklyIncomeByDay.find((d) => d._id === index + 1);
+      return { day: day, income: found ? found.income : 0 };
+    });
+    const weeklyIncomeChart = mappedData.slice(1).concat(mappedData[0]);
+
+    const expensesByCategory = await Expense.aggregate([
+      { $match: { user: userId, date: { $gte: start, $lte: end } } },
+      {
+        $group: {
+          _id: { $ifNull: ["$category", "Uncategorized"] },
+          amount: { $sum: "$amount" },
+        },
+      },
+      { $project: { name: "$_id", value: "$amount", _id: 0 } },
+    ]);
+
+    const scheduleTrend = await Schedule.aggregate([
+      {
+        $match: {
+          user: userId,
+          date: { $gte: start, $lte: end },
+          scheduleType: "hourly",
+        },
+      },
+      {
+        $project: {
+          isoWeek: { $isoWeek: { date: "$date", timezone: "UTC" } },
+          calculatedPay: { $multiply: ["$hours", "$hourlyRate"] },
+        },
+      },
+      { $group: { _id: "$isoWeek", income: { $sum: "$calculatedPay" } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const expenseTrend = await Expense.aggregate([
+      { $match: { user: userId, date: { $gte: start, $lte: end } } },
+      {
+        $project: {
+          isoWeek: { $isoWeek: { date: "$date", timezone: "UTC" } },
+          amount: "$amount",
+        },
+      },
+      { $group: { _id: "$isoWeek", expenses: { $sum: "$amount" } } },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const uniqueWeeks = [
+      ...new Set([
+        ...scheduleTrend.map((s) => s._id),
+        ...expenseTrend.map((e) => e._id),
+      ]),
+    ].sort((a, b) => a - b);
+
+    const monthlyTrend = uniqueWeeks.map((isoWeek, index) => {
+      const incomeData = scheduleTrend.find((s) => s._id === isoWeek);
+      const expenseData = expenseTrend.find((e) => e._id === isoWeek);
+      return {
+        week: `Week ${index + 1}`,
+        income: incomeData ? incomeData.income : 0,
+        expenses: expenseData ? expenseData.expenses : 0,
+      };
+    });
+
+    if (
+      uniqueWeeks.length === 0 &&
+      (period === "month" || period === "last4weeks" || period === "custom")
+    ) {
+      const numWeeks = Math.max(
+        1,
+        Math.ceil(
+          (end.getTime() - start.getTime() + 1) / (1000 * 60 * 60 * 24 * 7)
+        )
+      );
+      for (let i = 0; i < numWeeks; i++) {
+        if (!monthlyTrend.find((w) => w.week === `Week ${i + 1}`)) {
+          monthlyTrend.push({ week: `Week ${i + 1}`, income: 0, expenses: 0 });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      kpis: {
+        totalIncome,
+        monthlyIncome: estimatedMonthlyIncome,
+        totalExpenses,
+        netProfit,
+      },
+      charts: {
+        weeklyIncomeByDay: weeklyIncomeChart,
+        expensesByCategory,
+        monthlyTrend,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/generate", protect, async (req, res, next) => {
   try {
     const { reportType, format, period, startDate, endDate } = req.body;
@@ -807,6 +821,12 @@ router.post("/generate", protect, async (req, res, next) => {
       }
       doc.end();
     } else {
+      if (reportType !== "combined") {
+        dataToExport = dataToExport.map(
+          ({ "Report Section": _, ...rest }) => rest
+        );
+      }
+
       const worksheet = xlsx.utils.json_to_sheet(dataToExport, {
         header: headers.length > 0 ? headers : undefined,
       });

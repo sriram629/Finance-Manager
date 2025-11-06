@@ -2,6 +2,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import {
   Card,
   CardContent,
@@ -12,12 +15,6 @@ import {
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "../components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -37,6 +34,20 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip";
 import { Info, Plus, Edit, Trash2, Calendar } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import {
@@ -47,9 +58,11 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import api from "@/api/axios";
 import { ISchedule } from "./Home";
 import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
+import { HybridDatePicker } from "@/components/ui/hybrid-date-picker";
 
 const daysOfWeek = [
   "Monday",
@@ -61,23 +74,71 @@ const daysOfWeek = [
   "Sunday",
 ];
 
-interface ScheduleFormData {
-  date: string;
-  scheduleType: "hourly" | "monthly";
-  hours?: number | string;
-  hourlyRate?: number | string;
-  monthlySalary?: number | string;
-  notes?: string;
-  repeatWeekly: boolean;
-  repeatWeekdays: string[];
-}
+const scheduleSchema = z
+  .object({
+    date: z.string().min(1, { message: "Date is required." }),
+    scheduleType: z.enum(["hourly", "monthly"]),
+    hours: z.coerce.number().optional(),
+    hourlyRate: z.coerce.number().optional(),
+    monthlySalary: z.coerce.number().optional(),
+    notes: z.string().optional(),
+    repeatWeekly: z.boolean().default(false),
+    repeatWeekdays: z.array(z.string()).optional(),
+  })
+  .refine(
+    (data) => {
+      if (
+        data.scheduleType === "hourly" &&
+        (data.hours === undefined || data.hours <= 0)
+      ) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Hours must be greater than 0 for hourly schedule",
+      path: ["hours"],
+    }
+  )
+  .refine(
+    (data) => {
+      if (
+        data.scheduleType === "hourly" &&
+        (data.hourlyRate === undefined || data.hourlyRate < 0)
+      ) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Rate is required for hourly schedule",
+      path: ["hourlyRate"],
+    }
+  )
+  .refine(
+    (data) => {
+      if (
+        data.scheduleType === "monthly" &&
+        (data.monthlySalary === undefined || data.monthlySalary <= 0)
+      ) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Salary must be greater than 0 for monthly schedule",
+      path: ["monthlySalary"],
+    }
+  );
+
+type ScheduleFormData = z.infer<typeof scheduleSchema>;
 
 const initialFormData: ScheduleFormData = {
   date: "",
   scheduleType: "hourly",
-  hours: "",
-  hourlyRate: "",
-  monthlySalary: "",
+  hours: undefined,
+  hourlyRate: undefined,
+  monthlySalary: undefined,
   notes: "",
   repeatWeekly: false,
   repeatWeekdays: [],
@@ -91,6 +152,48 @@ const fetchSchedules = async (includeFuture: boolean): Promise<ISchedule[]> => {
   throw new Error(response.data.error || "Failed to fetch schedules");
 };
 
+const ScheduleTableSkeleton = () => (
+  <div className="rounded-md border overflow-x-auto relative">
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Date</TableHead>
+          <TableHead>Hours</TableHead>
+          <TableHead>Rate</TableHead>
+          <TableHead>Total Pay</TableHead>
+          <TableHead>Tag</TableHead>
+          <TableHead>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...Array(5)].map((_, i) => (
+          <TableRow key={i}>
+            <TableCell>
+              <Skeleton className="h-5 w-24" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-5 w-10" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-5 w-16" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-5 w-20" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-5 w-20" />
+            </TableCell>
+            <TableCell className="flex gap-1">
+              <Skeleton className="h-8 w-8" />
+              <Skeleton className="h-8 w-8" />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </div>
+);
+
 export default function Schedules() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -99,7 +202,13 @@ export default function Schedules() {
     null
   );
   const [showFuture, setShowFuture] = useState(false);
-  const [formData, setFormData] = useState<ScheduleFormData>(initialFormData);
+
+  const form = useForm<ScheduleFormData>({
+    resolver: zodResolver(scheduleSchema),
+    defaultValues: initialFormData,
+  });
+  const watchScheduleType = form.watch("scheduleType");
+  const watchRepeatWeekly = form.watch("repeatWeekly");
 
   const {
     data: schedules = [],
@@ -114,13 +223,14 @@ export default function Schedules() {
   });
 
   const addMutation = useMutation({
-    mutationFn: (newSchedule: any) => api.post("/schedules", newSchedule),
+    mutationFn: (newSchedule: ScheduleFormData) =>
+      api.post("/schedules", { ...newSchedule, tag: newSchedule.notes }),
     onSuccess: (data) => {
       toast({ title: "Schedule Added", description: data.data.message });
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      setFormData(initialFormData);
       setShowForm(false);
+      form.reset(initialFormData);
     },
     onError: (error: AxiosError<any>) => {
       toast({
@@ -137,8 +247,12 @@ export default function Schedules() {
       updatedSchedule,
     }: {
       id: string;
-      updatedSchedule: any;
-    }) => api.put(`/schedules/${id}`, updatedSchedule),
+      updatedSchedule: ScheduleFormData;
+    }) =>
+      api.put(`/schedules/${id}`, {
+        ...updatedSchedule,
+        tag: updatedSchedule.notes,
+      }),
     onSuccess: () => {
       toast({
         title: "Schedule Updated",
@@ -146,9 +260,9 @@ export default function Schedules() {
       });
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      setFormData(initialFormData);
       setShowForm(false);
       setEditingSchedule(null);
+      form.reset(initialFormData);
     },
     onError: (error: AxiosError<any>) => {
       toast({
@@ -161,111 +275,54 @@ export default function Schedules() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/schedules/${id}`),
-    onSuccess: () => {
-      toast({
-        title: "Schedule Deleted",
-        description: "The entry has been removed.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["schedules"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    onMutate: async (deletedScheduleId: string) => {
+      await queryClient.cancelQueries({ queryKey: ["schedules", showFuture] });
+      const previousSchedules = queryClient.getQueryData<ISchedule[]>([
+        "schedules",
+        showFuture,
+      ]);
+      queryClient.setQueryData<ISchedule[]>(
+        ["schedules", showFuture],
+        (oldData = []) =>
+          oldData.filter((schedule) => schedule._id !== deletedScheduleId)
+      );
+      return { previousSchedules };
     },
-    onError: (error: AxiosError<any>) => {
+    onError: (error: AxiosError<any>, variables, context) => {
+      if (context?.previousSchedules) {
+        queryClient.setQueryData(
+          ["schedules", showFuture],
+          context.previousSchedules
+        );
+      }
       toast({
         title: "Delete Failed",
         description: error.response?.data?.error || "An error occurred.",
         variant: "destructive",
       });
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value, type } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [id]: type === "number" ? (value === "" ? "" : value) : value,
-    }));
-  };
-  const handleTypeChange = (value: "hourly" | "monthly") => {
-    setFormData((prev) => ({ ...prev, scheduleType: value }));
-  };
-  const handleRepeatChange = (checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      repeatWeekly: checked,
-      repeatWeekdays: checked ? prev.repeatWeekdays : [],
-    }));
-  };
-  const handleDayChange = (day: string, checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      repeatWeekdays: checked
-        ? [...prev.repeatWeekdays, day]
-        : prev.repeatWeekdays.filter((d) => d !== day),
-    }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.date) {
-      toast({
-        title: "Missing Date",
-        description: "Please select a date.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (
-      !editingSchedule &&
-      formData.repeatWeekly &&
-      formData.repeatWeekdays.length === 0
-    ) {
-      toast({
-        title: "No Days Selected",
-        description: "Please select days to repeat.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const payload: Partial<ScheduleFormData> & { tag?: string } = {
-      date: formData.date,
-      scheduleType: formData.scheduleType,
-      hours:
-        formData.scheduleType === "hourly"
-          ? Number(formData.hours) || undefined
-          : undefined,
-      hourlyRate:
-        formData.scheduleType === "hourly"
-          ? Number(formData.hourlyRate) || undefined
-          : undefined,
-      monthlySalary:
-        formData.scheduleType === "monthly"
-          ? Number(formData.monthlySalary) || undefined
-          : undefined,
-      tag: formData.notes,
-      notes: formData.notes,
-      repeatWeekly: editingSchedule ? undefined : formData.repeatWeekly,
-      repeatWeekdays: editingSchedule ? undefined : formData.repeatWeekdays,
-    };
-
+  const onSubmit = (data: ScheduleFormData) => {
     if (editingSchedule) {
-      updateMutation.mutate({
-        id: editingSchedule._id,
-        updatedSchedule: payload,
-      });
+      updateMutation.mutate({ id: editingSchedule._id, updatedSchedule: data });
     } else {
-      addMutation.mutate(payload);
+      addMutation.mutate(data);
     }
   };
 
   const handleEditClick = (schedule: ISchedule) => {
     setEditingSchedule(schedule);
-    setFormData({
+    form.reset({
       date: schedule.date.split("T")[0],
       scheduleType: schedule.scheduleType,
-      hours: schedule.hours?.toString() || "",
-      hourlyRate: schedule.hourlyRate?.toString() || "",
-      monthlySalary: schedule.monthlySalary?.toString() || "",
+      hours: schedule.hours || undefined,
+      hourlyRate: schedule.hourlyRate || undefined,
+      monthlySalary: schedule.monthlySalary || undefined,
       notes: schedule.tag || "",
       repeatWeekly: false,
       repeatWeekdays: [],
@@ -276,7 +333,7 @@ export default function Schedules() {
   const handleCancelForm = () => {
     setShowForm(false);
     setEditingSchedule(null);
-    setFormData(initialFormData);
+    form.reset(initialFormData);
   };
 
   const handleDeleteClick = (scheduleId: string) => {
@@ -317,7 +374,7 @@ export default function Schedules() {
           <Button
             onClick={() => {
               setEditingSchedule(null);
-              setFormData(initialFormData);
+              form.reset(initialFormData);
               setShowForm(!showForm);
             }}
             disabled={isMutating}
@@ -341,177 +398,277 @@ export default function Schedules() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <Label>Schedule Type</Label>
-                <Select
-                  value={formData.scheduleType}
-                  onValueChange={handleTypeChange}
-                  disabled={addMutation.isPending || updateMutation.isPending}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="hourly">Hourly Rate</SelectItem>
-                    <SelectItem value="monthly">Monthly Salary</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <Input
-                  id="date"
-                  type="date"
-                  required
-                  value={formData.date}
-                  onChange={handleInputChange}
-                  disabled={addMutation.isPending || updateMutation.isPending}
-                />
-              </div>
-              {formData.scheduleType === "hourly" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="hours">Hours Worked</Label>
-                    <Input
-                      id="hours"
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      placeholder="8"
-                      required
-                      value={formData.hours}
-                      onChange={handleInputChange}
-                      disabled={
-                        addMutation.isPending || updateMutation.isPending
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="hourlyRate">Hourly Rate ($)</Label>
-                    <Input
-                      id="hourlyRate"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="15.00"
-                      required
-                      value={formData.hourlyRate}
-                      onChange={handleInputChange}
-                      disabled={
-                        addMutation.isPending || updateMutation.isPending
-                      }
-                    />
-                  </div>
-                </>
-              ) : (
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-6"
+              >
                 <div className="space-y-2">
-                  <Label htmlFor="monthlySalary">Monthly Salary ($)</Label>
-                  <Input
-                    id="monthlySalary"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="3000.00"
-                    required
-                    value={formData.monthlySalary}
-                    onChange={handleInputChange}
-                    disabled={addMutation.isPending || updateMutation.isPending}
+                  <FormField
+                    control={form.control}
+                    name="scheduleType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Schedule Type</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                          disabled={isMutating}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="hourly">Hourly Rate</SelectItem>
+                            <SelectItem value="monthly">
+                              Monthly Salary
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="notes">Tag / Notes (Optional)</Label>
-                <Input
-                  id="notes"
-                  placeholder="e.g., Night shift, Client Project"
-                  value={formData.notes}
-                  onChange={handleInputChange}
-                  disabled={addMutation.isPending || updateMutation.isPending}
-                />
-              </div>
-              {!editingSchedule && (
-                <div className="space-y-4 pt-4 border-t border-border/50">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="repeatWeekly"
-                      checked={formData.repeatWeekly}
-                      onCheckedChange={(checked) =>
-                        handleRepeatChange(checked as boolean)
-                      }
-                      disabled={addMutation.isPending}
-                    />
-                    <label
-                      htmlFor="repeatWeekly"
-                      className="text-sm font-medium leading-none"
-                    >
-                      Repeat weekly
-                    </label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>
-                            Applies this schedule to selected days for this week
-                            only
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  {formData.repeatWeekly && (
-                    <div className="space-y-2 pl-6">
-                      <Label>Select Days to Repeat</Label>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {daysOfWeek.map((day) => (
-                          <div
-                            key={day}
-                            className="flex items-center space-x-2"
-                          >
-                            <Checkbox
-                              id={day}
-                              checked={formData.repeatWeekdays.includes(day)}
-                              onCheckedChange={(checked) =>
-                                handleDayChange(day, checked as boolean)
-                              }
-                              disabled={addMutation.isPending}
-                            />
-                            <label htmlFor={day} className="text-sm">
-                              {day}
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                <div className="space-y-2">
+                  <FormField
+                    control={form.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Date</FormLabel>
+                        <FormControl>
+                          <HybridDatePicker
+                            id="date"
+                            value={field.value}
+                            onChange={field.onChange}
+                            disabled={isMutating}
+                            required
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-              )}
-              <div className="flex gap-2 pt-4 border-t border-border/50">
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={addMutation.isPending || updateMutation.isPending}
-                >
-                  {addMutation.isPending || updateMutation.isPending ? (
-                    <LoadingSpinner />
-                  ) : editingSchedule ? (
-                    "Update Schedule"
-                  ) : (
-                    "Add Schedule(s)"
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCancelForm}
-                  disabled={addMutation.isPending || updateMutation.isPending}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
+
+                {watchScheduleType === "hourly" ? (
+                  <>
+                    <div className="space-y-2">
+                      <FormField
+                        control={form.control}
+                        name="hours"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Hours Worked</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                placeholder="8"
+                                {...field}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value === ""
+                                      ? undefined
+                                      : e.target.valueAsNumber
+                                  )
+                                }
+                                value={field.value ?? ""}
+                                disabled={isMutating}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <FormField
+                        control={form.control}
+                        name="hourlyRate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Hourly Rate ($)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="15.00"
+                                {...field}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value === ""
+                                      ? undefined
+                                      : e.target.valueAsNumber
+                                  )
+                                }
+                                value={field.value ?? ""}
+                                disabled={isMutating}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="monthlySalary"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Monthly Salary ($)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="3000.00"
+                              {...field}
+                              onChange={(e) =>
+                                field.onChange(
+                                  e.target.value === ""
+                                    ? undefined
+                                    : e.target.valueAsNumber
+                                )
+                              }
+                              value={field.value ?? ""}
+                              disabled={isMutating}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tag / Notes (Optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Night shift, Client Project"
+                            {...field}
+                            value={field.value ?? ""}
+                            disabled={isMutating}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {!editingSchedule && (
+                  <div className="space-y-4 pt-4 border-t border-border/50">
+                    <FormField
+                      control={form.control}
+                      name="repeatWeekly"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              disabled={isMutating}
+                            />
+                          </FormControl>
+                          <FormLabel className="text-sm font-medium leading-none">
+                            Repeat weekly
+                          </FormLabel>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger type="button" asChild>
+                                <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>
+                                  Applies this schedule to selected days for
+                                  this week only
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </FormItem>
+                      )}
+                    />
+                    {watchRepeatWeekly && (
+                      <div className="space-y-2 pl-6">
+                        <Label>Select Days to Repeat</Label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {daysOfWeek.map((day) => (
+                            <FormField
+                              key={day}
+                              control={form.control}
+                              name="repeatWeekdays"
+                              render={({ field }) => (
+                                <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                                  <FormControl>
+                                    <Checkbox
+                                      checked={field.value?.includes(day)}
+                                      onCheckedChange={(checked) => {
+                                        return checked
+                                          ? field.onChange([
+                                              ...(field.value || []),
+                                              day,
+                                            ])
+                                          : field.onChange(
+                                              field.value?.filter(
+                                                (value) => value !== day
+                                              )
+                                            );
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <FormLabel className="text-sm font-normal">
+                                    {day}
+                                  </FormLabel>
+                                </FormItem>
+                              )}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-2 pt-4 border-t border-border/50">
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isMutating}
+                  >
+                    {isMutating ? (
+                      <LoadingSpinner />
+                    ) : editingSchedule ? (
+                      "Update Schedule"
+                    ) : (
+                      "Add Schedule(s)"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancelForm}
+                    disabled={isMutating}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </Form>
           </CardContent>
         </Card>
       )}
@@ -530,9 +687,7 @@ export default function Schedules() {
             </div>
           )}
           {isFetchingInitial && !fetchError && schedules.length === 0 ? (
-            <div className="flex justify-center py-20">
-              <LoadingSpinner />
-            </div>
+            <ScheduleTableSkeleton />
           ) : !fetchError && schedules.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No schedules recorded yet. Click "Add Schedule" to start.
@@ -596,6 +751,9 @@ export default function Schedules() {
                           className="mr-1"
                           onClick={() => handleEditClick(schedule)}
                           disabled={isMutating}
+                          aria-label={`Edit schedule for ${new Date(
+                            schedule.date
+                          ).toLocaleDateString()}`}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -606,6 +764,9 @@ export default function Schedules() {
                               size="icon"
                               className="text-destructive"
                               disabled={isMutating || deleteMutation.isPending}
+                              aria-label={`Delete schedule for ${new Date(
+                                schedule.date
+                              ).toLocaleDateString()}`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

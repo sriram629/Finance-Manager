@@ -32,6 +32,8 @@ import { useAuth } from "@/context/AuthContext";
 import { Link } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { HybridDatePicker } from "@/components/ui/hybrid-date-picker";
 
 const EmptyState = ({
   title,
@@ -53,6 +55,33 @@ const EmptyState = ({
         {linkText}
       </Link>
     </Button>
+  </div>
+);
+
+const DashboardLoadingSkeleton = () => (
+  <div className="space-y-6">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <Skeleton className="h-[108px] rounded-lg" />
+      <Skeleton className="h-[108px] rounded-lg" />
+      <Skeleton className="h-[108px] rounded-lg" />
+      <Skeleton className="h-[108px] rounded-lg" />
+    </div>
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Skeleton className="lg:col-span-2 h-[298px] rounded-lg" />
+      <Skeleton className="h-[298px] rounded-lg" />
+    </div>
+    <Skeleton className="h-[298px] rounded-lg" />
+    <Card className="p-6 bg-card/40 backdrop-blur-sm border-border/50 relative">
+      <div className="flex justify-between items-center mb-4">
+        <Skeleton className="h-7 w-48" />
+        <Skeleton className="h-9 w-32" />
+      </div>
+      <div className="overflow-x-auto relative min-h-[100px]">
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-12 w-full mt-2" />
+        <Skeleton className="h-12 w-full mt-2" />
+      </div>
+    </Card>
   </div>
 );
 
@@ -110,6 +139,8 @@ const fetchSchedules = async (
   if (period === "custom" && startDate && endDate) {
     params.append("startDate", startDate);
     params.append("endDate", endDate);
+  } else if (period !== "custom") {
+    params.append("period", period);
   }
 
   const response = await api.get(`/schedules?${params.toString()}`);
@@ -231,21 +262,19 @@ export default function Home() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="startDate-dash">Start Date</Label>
-              <Input
+              <HybridDatePicker
                 id="startDate-dash"
-                type="date"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                onChange={setStartDate}
                 disabled={isLoadingDashboard || isRefetchingSchedules}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="endDate-dash">End Date</Label>
-              <Input
+              <HybridDatePicker
                 id="endDate-dash"
-                type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={setEndDate}
                 disabled={isLoadingDashboard || isRefetchingSchedules}
               />
             </div>
@@ -259,9 +288,7 @@ export default function Home() {
       )}
 
       {isLoadingInitial ? (
-        <div className="flex justify-center py-20">
-          <LoadingSpinner />
-        </div>
+        <DashboardLoadingSkeleton />
       ) : !dashboardData || dashboardError ? (
         <Card className="p-6 bg-card/40 backdrop-blur-sm border-border/50">
           {dashboardError ? (
@@ -520,7 +547,7 @@ export default function Home() {
                     isRefetchingSchedules ? "opacity-50" : ""
                   }`}
                 >
-                  {isLoadingSchedules
+                  {isLoadingSchedules && schedules.length === 0
                     ? "Loading schedules..."
                     : "No schedules found for this period."}
                 </div>

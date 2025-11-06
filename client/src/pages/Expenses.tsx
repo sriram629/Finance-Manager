@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AxiosError, AxiosResponse } from "axios";
+import { AxiosError } from "axios";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import {
   Card,
   CardContent,
@@ -13,18 +16,26 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "../components/ui/tooltip";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/tooltip";
 import { Info, Plus, Trash2, Upload, Edit } from "lucide-react";
 import { useToast } from "../hooks/use-toast";
 import {
@@ -36,6 +47,7 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { Badge } from "../components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import api from "@/api/axios";
 import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
 import {
@@ -49,6 +61,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { HybridDatePicker } from "@/components/ui/hybrid-date-picker";
 
 interface Expense {
   _id: string;
@@ -60,20 +73,24 @@ interface Expense {
   notes?: string;
 }
 
-interface ExpenseFormData {
-  date: string;
-  place: string;
-  category: string;
-  amount: string;
-  notes?: string;
-  receipt?: File | null;
-}
+const expenseSchema = z.object({
+  date: z.string().min(1, { message: "Date is required." }),
+  place: z.string().min(1, { message: "Place/Vendor is required." }),
+  category: z.string().optional(),
+  amount: z.coerce
+    .number()
+    .min(0.01, { message: "Amount must be greater than 0." }),
+  notes: z.string().optional(),
+  receipt: z.any().optional(),
+});
+
+type ExpenseFormData = z.infer<typeof expenseSchema>;
 
 const initialFormData: ExpenseFormData = {
   date: "",
   place: "",
   category: "",
-  amount: "",
+  amount: 0,
   notes: "",
   receipt: null,
 };
@@ -86,12 +103,54 @@ const fetchExpenses = async (): Promise<Expense[]> => {
   throw new Error(response.data.error || "Could not fetch expenses.");
 };
 
+const ExpenseTableSkeleton = () => (
+  <div className="rounded-md border overflow-x-auto relative">
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Date</TableHead>
+          <TableHead>Place</TableHead>
+          <TableHead>Category</TableHead>
+          <TableHead>Amount</TableHead>
+          <TableHead>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...Array(3)].map((_, i) => (
+          <TableRow key={i}>
+            <TableCell>
+              <Skeleton className="h-5 w-24" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-5 w-32" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-5 w-28" />
+            </TableCell>
+            <TableCell>
+              <Skeleton className="h-5 w-20" />
+            </TableCell>
+            <TableCell className="flex gap-1">
+              <Skeleton className="h-8 w-8" />
+              <Skeleton className="h-8 w-8" />
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </div>
+);
+
 export default function Expenses() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const [formData, setFormData] = useState<ExpenseFormData>(initialFormData);
+
+  const form = useForm<ExpenseFormData>({
+    resolver: zodResolver(expenseSchema),
+    defaultValues: initialFormData,
+  });
 
   const {
     data: expenses = [],
@@ -110,15 +169,15 @@ export default function Expenses() {
       api.post("/expenses", newExpense, {
         headers: { "Content-Type": "multipart/form-data" },
       }),
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
         title: "Expense Added",
         description: "Expense recorded successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      setFormData(initialFormData);
       setShowForm(false);
+      form.reset(initialFormData);
     },
     onError: (error: AxiosError<any>) => {
       toast({
@@ -141,7 +200,7 @@ export default function Expenses() {
       api.put(`/expenses/${id}`, updatedExpense, {
         headers: { "Content-Type": "multipart/form-data" },
       }),
-    onSuccess: (data) => {
+    onSuccess: () => {
       toast({
         title: "Expense Updated",
         description: "Expense saved successfully.",
@@ -150,7 +209,7 @@ export default function Expenses() {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setEditingExpense(null);
       setShowForm(false);
-      setFormData(initialFormData);
+      form.reset(initialFormData);
     },
     onError: (error: AxiosError<any>) => {
       toast({
@@ -163,50 +222,42 @@ export default function Expenses() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/expenses/${id}`),
-    onSuccess: () => {
-      toast({
-        title: "Expense Deleted",
-        description: "The expense has been removed.",
-      });
-      queryClient.invalidateQueries({ queryKey: ["expenses"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    onMutate: async (deletedExpenseId: string) => {
+      await queryClient.cancelQueries({ queryKey: ["expenses"] });
+      const previousExpenses = queryClient.getQueryData<Expense[]>([
+        "expenses",
+      ]);
+      queryClient.setQueryData<Expense[]>(["expenses"], (oldData = []) =>
+        oldData.filter((exp) => exp._id !== deletedExpenseId)
+      );
+      return { previousExpenses };
     },
-    onError: (error: AxiosError<any>) => {
+    onError: (error: AxiosError<any>, variables, context) => {
+      if (context?.previousExpenses) {
+        queryClient.setQueryData(["expenses"], context.previousExpenses);
+      }
       toast({
         title: "Delete Failed",
         description: error.response?.data?.error || "Could not delete expense.",
         variant: "destructive",
       });
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { id, value } = e.target;
-    setFormData((prev) => ({ ...prev, [id]: value }));
-  };
-
-  const handleSelectChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, category: value }));
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFormData((prev) => ({ ...prev, receipt: e.target.files![0] }));
-    } else {
-      setFormData((prev) => ({ ...prev, receipt: null }));
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const onSubmit = (data: ExpenseFormData) => {
     const dataToSubmit = new FormData();
-    dataToSubmit.append("date", formData.date);
-    dataToSubmit.append("place", formData.place);
-    dataToSubmit.append("amount", formData.amount);
-    if (formData.category) dataToSubmit.append("category", formData.category);
-    if (formData.notes) dataToSubmit.append("notes", formData.notes);
-    if (formData.receipt) dataToSubmit.append("receipt", formData.receipt);
+    dataToSubmit.append("date", data.date);
+    dataToSubmit.append("place", data.place);
+    dataToSubmit.append("amount", String(data.amount));
+    if (data.category) dataToSubmit.append("category", data.category);
+    if (data.notes) dataToSubmit.append("notes", data.notes);
+    if (data.receipt instanceof File) {
+      dataToSubmit.append("receipt", data.receipt);
+    }
 
     if (editingExpense) {
       updateMutation.mutate({
@@ -224,11 +275,11 @@ export default function Expenses() {
 
   const handleEdit = (expense: Expense) => {
     setEditingExpense(expense);
-    setFormData({
+    form.reset({
       date: expense.date.split("T")[0],
       place: expense.place,
       category: expense.category || "",
-      amount: expense.amount.toString(),
+      amount: expense.amount,
       notes: expense.notes || "",
       receipt: null,
     });
@@ -238,7 +289,7 @@ export default function Expenses() {
   const handleCancelEdit = () => {
     setShowForm(false);
     setEditingExpense(null);
-    setFormData(initialFormData);
+    form.reset(initialFormData);
   };
 
   const totalExpenses = expenses.reduce((sum, exp) => {
@@ -265,7 +316,7 @@ export default function Expenses() {
         <Button
           onClick={() => {
             setEditingExpense(null);
-            setFormData(initialFormData);
+            form.reset(initialFormData);
             setShowForm(!showForm);
           }}
           disabled={isMutating}
@@ -314,155 +365,204 @@ export default function Expenses() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="date">Date</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Expense date</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+            <Form {...form}>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="date"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-col">
+                          <FormLabel>Date</FormLabel>
+                          <FormControl>
+                            <HybridDatePicker
+                              id="date"
+                              value={field.value}
+                              onChange={field.onChange}
+                              disabled={isMutating}
+                              required
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
-                  <Input
-                    id="date"
-                    type="date"
-                    required
-                    value={formData.date}
-                    onChange={handleInputChange}
-                    disabled={isMutating}
+                  <div className="space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="place"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Place/Vendor</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., Walmart"
+                              {...field}
+                              disabled={isMutating}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Category</FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                            disabled={isMutating}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="Food">
+                                Food & Dining
+                              </SelectItem>
+                              <SelectItem value="Transportation">
+                                Transportation
+                              </SelectItem>
+                              <SelectItem value="Healthcare">
+                                Healthcare
+                              </SelectItem>
+                              <SelectItem value="Utilities">
+                                Utilities
+                              </SelectItem>
+                              <SelectItem value="Entertainment">
+                                Entertainment
+                              </SelectItem>
+                              <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Amount ($)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                              {...field}
+                              onChange={(e) =>
+                                field.onChange(
+                                  e.target.value === ""
+                                    ? undefined
+                                    : e.target.valueAsNumber
+                                )
+                              }
+                              value={field.value ?? ""}
+                              disabled={isMutating}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Notes (Optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Weekly groceries"
+                            {...field}
+                            value={field.value ?? ""}
+                            disabled={isMutating}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="place">Place/Vendor</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Where?</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <Input
-                    id="place"
-                    placeholder="e.g., Walmart"
-                    required
-                    value={formData.place}
-                    onChange={handleInputChange}
-                    disabled={isMutating}
+                  <FormField
+                    control={form.control}
+                    name="receipt"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Receipt (Optional {editingExpense ? "- Replace" : ""})
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="file"
+                            accept="image/*,.pdf"
+                            disabled={isMutating}
+                            onChange={(e) =>
+                              field.onChange(
+                                e.target.files ? e.target.files[0] : null
+                              )
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
+                  {editingExpense?.receiptUrl && !form.getValues("receipt") && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Current:{" "}
+                      <a
+                        href={editingExpense.receiptUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        {editingExpense.receiptUrl.split("/").pop()}
+                      </a>
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Select
-                    value={formData.category}
-                    onValueChange={handleSelectChange}
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={isMutating}>
+                    {isMutating ? (
+                      <LoadingSpinner />
+                    ) : editingExpense ? (
+                      "Save Changes"
+                    ) : (
+                      "Add Expense"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleCancelEdit}
                     disabled={isMutating}
                   >
-                    <SelectTrigger id="category">
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Food">Food & Dining</SelectItem>
-                      <SelectItem value="Transportation">
-                        Transportation
-                      </SelectItem>
-                      <SelectItem value="Healthcare">Healthcare</SelectItem>
-                      <SelectItem value="Utilities">Utilities</SelectItem>
-                      <SelectItem value="Entertainment">
-                        Entertainment
-                      </SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    Cancel
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="amount">Amount ($)</Label>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Amount spent</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <Input
-                    id="amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    required
-                    value={formData.amount}
-                    onChange={handleInputChange}
-                    disabled={isMutating}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="receipt">
-                  Receipt (Optional {editingExpense ? "- Replace" : ""})
-                </Label>
-                <Input
-                  id="receipt"
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={handleFileChange}
-                  disabled={isMutating}
-                />
-                {editingExpense?.receiptUrl && !formData.receipt && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Current:{" "}
-                    <a
-                      href={editingExpense.receiptUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      {editingExpense.receiptUrl.split("/").pop()}
-                    </a>
-                  </p>
-                )}
-                {formData.receipt && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    New: {formData.receipt.name}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit" disabled={isMutating}>
-                  {isMutating ? (
-                    <LoadingSpinner />
-                  ) : editingExpense ? (
-                    "Save Changes"
-                  ) : (
-                    "Add Expense"
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCancelEdit}
-                  disabled={isMutating}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
+              </form>
+            </Form>
           </CardContent>
         </Card>
       )}
@@ -475,13 +575,12 @@ export default function Expenses() {
         <CardContent>
           {fetchError && (
             <div className="text-center py-12 text-destructive">
-              Error loading expenses: {fetchError.message}
+              {" "}
+              Error loading expenses: {fetchError.message}{" "}
             </div>
           )}
           {isFetchingExpenses && !fetchError && expenses.length === 0 ? (
-            <div className="flex justify-center py-20">
-              <LoadingSpinner />
-            </div>
+            <ExpenseTableSkeleton />
           ) : !fetchError && expenses.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No expenses recorded yet.
@@ -531,6 +630,9 @@ export default function Expenses() {
                             className="mr-1"
                             onClick={() => handleEdit(expense)}
                             disabled={isMutating}
+                            aria-label={`Edit expense on ${new Date(
+                              expense.date
+                            ).toLocaleDateString()}`}
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -543,6 +645,9 @@ export default function Expenses() {
                                 disabled={
                                   isMutating || deleteMutation.isPending
                                 }
+                                aria-label={`Delete expense on ${new Date(
+                                  expense.date
+                                ).toLocaleDateString()}`}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>

@@ -10,11 +10,15 @@ const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./config/swagger");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const { protect } = require("./middleware/authMiddleware");
+const helmet = require("helmet");
+const mongoSanitize = require("express-mongo-sanitize");
+const rateLimit = require("express-rate-limit");
 
 connectDB();
 
 const app = express();
 
+app.use(helmet());
 app.use(
   cors({
     origin: process.env.ALLOWED_ORIGINS?.split(",") || "*",
@@ -24,6 +28,7 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(mongoSanitize());
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -37,12 +42,34 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-app.use("/api/auth", require("./routes/auth"));
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    success: false,
+    error: "Too many attempts, please try again in 15 minutes.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
-app.use("/api/user", protect, require("./routes/user"));
-app.use("/api/schedules", protect, require("./routes/schedules"));
-app.use("/api/expenses", protect, require("./routes/expenses"));
-app.use("/api/reports", protect, require("./routes/reports"));
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: {
+    success: false,
+    error: "Too many requests, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use("/api/auth", authLimiter, require("./routes/auth"));
+
+app.use("/api/user", protect, apiLimiter, require("./routes/user"));
+app.use("/api/schedules", protect, apiLimiter, require("./routes/schedules"));
+app.use("/api/expenses", protect, apiLimiter, require("./routes/expenses"));
+app.use("/api/reports", protect, apiLimiter, require("./routes/reports"));
 
 app.use(notFound);
 app.use(errorHandler);

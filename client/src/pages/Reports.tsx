@@ -41,6 +41,7 @@ import {
 } from "../components/ui/tabs";
 import api from "@/api/axios";
 import { LoadingSpinner } from "@/components/auth/LoadingSpinner";
+import { HybridDatePicker } from "@/components/ui/hybrid-date-picker";
 
 export default function Reports() {
   const { toast } = useToast();
@@ -60,7 +61,6 @@ export default function Reports() {
   ) => {
     try {
       const response = await apiCall();
-      const format = defaultFilename.split(".").pop() || "xlsx";
 
       const blob = new Blob([response.data], {
         type: response.headers["content-type"],
@@ -70,7 +70,7 @@ export default function Reports() {
       const contentDisposition = response.headers["content-disposition"];
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-        if (filenameMatch.length > 1) {
+        if (filenameMatch && filenameMatch.length > 1) {
           filename = filenameMatch[1];
         }
       }
@@ -195,22 +195,22 @@ export default function Reports() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t mt-4">
         <div className="space-y-2">
           <Label htmlFor={`${idPrefix}-startDate`}>Start Date</Label>
-          <Input
+          <HybridDatePicker
             id={`${idPrefix}-startDate`}
-            type="date"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={setStartDate}
             disabled={isDownloading}
+            required
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor={`${idPrefix}-endDate`}>End Date</Label>
-          <Input
+          <HybridDatePicker
             id={`${idPrefix}-endDate`}
-            type="date"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            onChange={setEndDate}
             disabled={isDownloading}
+            required
           />
         </div>
       </div>
@@ -509,14 +509,26 @@ export default function Reports() {
             <Button
               variant="outline"
               className="h-auto p-4 justify-start"
-              disabled
+              onClick={() =>
+                handleQuickExport(
+                  "expense-analysis",
+                  "xlsx",
+                  "expenses",
+                  "expense_analysis.xlsx"
+                )
+              }
+              disabled={isDownloading || !!quickExportLoading}
             >
-              <div className="text-left">
-                <p className="font-medium">Tax Report</p>
-                <p className="text-sm text-muted-foreground">
-                  Annual income for tax filing
-                </p>
-              </div>
+              {quickExportLoading === "expense-analysis" ? (
+                <LoadingSpinner />
+              ) : (
+                <div className="text-left">
+                  <p className="font-medium">Expense Analysis</p>
+                  <p className="text-sm text-muted-foreground">
+                    Category breakdown for month
+                  </p>
+                </div>
+              )}
             </Button>
             <Button
               variant="outline"
@@ -524,9 +536,9 @@ export default function Reports() {
               disabled
             >
               <div className="text-left">
-                <p className="font-medium">Expense Analysis</p>
+                <p className="font-medium">Tax Report (WIP)</p>
                 <p className="text-sm text-muted-foreground">
-                  Category breakdown YTD
+                  Annual income for tax filing
                 </p>
               </div>
             </Button>
