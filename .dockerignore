@@ -1,0 +1,22 @@
+# Git
+.git
+.gitignore
+
+# Node modules
+node_modules
+client/node_modules
+server/node_modules
+
+# Build output
+client/dist
+server/dist
+
+# Env files (these are handled by docker-compose)
+.env
+.env.local
+server/.env
+client/.env
+
+# OS
+.DS_Store
+Thumbs.db

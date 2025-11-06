@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  server:
+    build: ./server
+    ports:
+      - "5050:5050"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+    volumes:
+      - ./server/uploads:/app/uploads
+
+  client:
+    build: ./client
+    ports:
+      - "8080:80"
+    depends_on:
+      - server
