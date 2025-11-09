@@ -13,11 +13,13 @@ const { protect } = require("./middleware/authMiddleware");
 const helmet = require("helmet");
 const mongoSanitize = require("express-mongo-sanitize");
 const rateLimit = require("express-rate-limit");
+const passport = require("./config/passport");
 
 connectDB();
 
 const app = express();
-
+app.enable("trust proxy");
+app.use(passport.initialize());
 app.use(helmet());
 app.use(
   cors({

@@ -15,6 +15,7 @@ import Settings from "./pages/Settings";
 import { AppLayout } from "./components/layout/AppLayout";
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "./context/AuthContext";
+import AuthCallback from "./pages/AuthCallBack";
 
 const queryClient = new QueryClient();
 
@@ -29,9 +30,9 @@ const App = () => (
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/register" element={<Register />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
 
-            {/* Protected routes */}
             <Route element={<AppLayout />}>
               <Route path="/home" element={<Home />} />
               <Route path="/add-schedule" element={<AddSchedule />} />

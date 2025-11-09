@@ -6,6 +6,7 @@ const generateToken = require("../utils/generateToken");
 const { validationRules, validate } = require("../utils/validation");
 const jwt = require("jsonwebtoken");
 const { protect: verifyToken } = require("../middleware/authMiddleware");
+const passport = require("../config/passport");
 
 /**
  * @swagger
@@ -557,5 +558,37 @@ router.get("/protected", verifyToken, (req, res) => {
     user: req.user,
   });
 });
+
+router.get(
+  "/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+);
+router.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login?error=Google+login+failed`,
+  }),
+  (req, res) => {
+    const token = generateToken(req.user._id);
+    res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+  }
+);
+
+router.get(
+  "/github",
+  passport.authenticate("github", { scope: ["user:email"] })
+);
+router.get(
+  "/github/callback",
+  passport.authenticate("github", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login?error=GitHub+login+failed`,
+  }),
+  (req, res) => {
+    const token = generateToken(req.user._id);
+    res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+  }
+);
 
 module.exports = router;

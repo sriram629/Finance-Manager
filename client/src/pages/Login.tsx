@@ -10,6 +10,8 @@ import { Label } from "../components/ui/label";
 import { useToast } from "../hooks/use-toast";
 import api from "@/api/axios";
 import { useAuth } from "@/context/AuthContext";
+import { Github } from "lucide-react";
+import { GoogleIcon } from "@/components/ui/google-icon";
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -157,6 +159,19 @@ export default function Login() {
               Sign up
             </Link>
           </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Button variant="outline" asChild>
+              <a href={`${import.meta.env.VITE_API_URL}/auth/google`}>
+                <GoogleIcon className="mr-2 h-4 w-4" /> Google
+              </a>
+            </Button>
+            <Button variant="outline" asChild>
+              <a href={`${import.meta.env.VITE_API_URL}/auth/github`}>
+                <Github className="mr-2 h-4 w-4" /> GitHub
+              </a>
+            </Button>
+          </div>
         </div>
       </GlassCard>
     </div>
