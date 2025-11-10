@@ -186,7 +186,7 @@ router.post(
       const { email, password, firstName, lastName } = req.body;
 
       let user = await User.findOne({ email });
-      if (user) {
+      if (user && user.isVerified) {
         return res.status(409).json({
           success: false,
           error: "Email already exists",
@@ -194,19 +194,20 @@ router.post(
         });
       }
 
+      if (!user) {
+        user = new User({ email });
+      }
+
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-      user = new User({
-        email,
-        password,
-        firstName,
-        lastName,
-        otpCode,
-        otpExpiresAt,
-      });
-      await user.save();
+      user.password = password;
+      user.firstName = firstName;
+      user.lastName = lastName;
+      user.otpCode = otpCode;
+      user.otpExpiresAt = otpExpiresAt;
 
+      await user.save();
       await sendOtpEmail(email, firstName, otpCode);
 
       res.status(200).json({
