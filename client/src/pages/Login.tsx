@@ -161,12 +161,20 @@ export default function Login() {
           </p>
 
           <div className="grid grid-cols-2 gap-4">
-            <Button variant="outline" asChild>
+            <Button
+              variant="outline"
+              className="bg-white/5 border-white/10 hover:bg-white/10 hover:text-white transition-all backdrop-blur-md"
+              asChild
+            >
               <a href={`${import.meta.env.VITE_API_URL}/auth/google`}>
                 <GoogleIcon className="mr-2 h-4 w-4" /> Google
               </a>
             </Button>
-            <Button variant="outline" asChild>
+            <Button
+              variant="outline"
+              className="bg-white/5 border-white/10 hover:bg-white/10 hover:text-white transition-all backdrop-blur-md"
+              asChild
+            >
               <a href={`${import.meta.env.VITE_API_URL}/auth/github`}>
                 <Github className="mr-2 h-4 w-4" /> GitHub
               </a>
