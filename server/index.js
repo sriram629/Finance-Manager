@@ -18,7 +18,7 @@ const passport = require("./config/passport");
 connectDB();
 
 const app = express();
-app.enable("trust proxy", 1);
+app.set("trust proxy", 1);
 app.use(passport.initialize());
 app.use(helmet());
 app.use(
@@ -33,6 +33,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(mongoSanitize());
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+app.get("/", (req, res) => {
+  res.send("Finance Manager API is running...");
+});
 
 app.get("/api/health", (req, res) => {
   res.json({
