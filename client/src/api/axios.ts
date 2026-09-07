@@ -19,6 +19,8 @@ api.interceptors.request.use(
     const token = localStorage.getItem("authToken");
     if (token) {
       config.headers["Authorization"] = `Bearer ${token}`;
+    } else {
+      delete config.headers.Authorization;
     }
     return config;
   },
@@ -27,4 +29,10 @@ api.interceptors.request.use(
   }
 );
 
+api.interceptors.response.use(response => response, error => {
+  if (error.response?.status === 401 && localStorage.getItem("authToken") && !error.config?.url?.startsWith("/auth/")) {
+    window.dispatchEvent(new Event("auth:expired"));
+  }
+  return Promise.reject(error);
+});
 export default api;

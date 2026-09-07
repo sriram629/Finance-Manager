@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/authMiddleware");
-const { uploadReceipt } = require("../middleware/uploadMiddleware");
+const { uploadReceipt, uploadDir } = require("../middleware/uploadMiddleware");
 const Expense = require("../models/Expense");
 const mongoose = require("mongoose");
 const multer = require("multer");
@@ -217,12 +217,29 @@ const path = require("path");
 
 const deleteReceiptFile = (receiptUrl) => {
   if (!receiptUrl) return;
-  const filePath = path.join(process.cwd(), receiptUrl);
+  const filePath = path.join(uploadDir, path.basename(receiptUrl));
   fs.unlink(filePath, (err) => {
     if (err) console.error(`Failed to delete receipt file: ${filePath}`, err);
     else console.log(`Deleted receipt file: ${filePath}`);
   });
 };
+
+router.get('/:id/receipt', protect, async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.sendStatus(404);
+    const expense = await Expense.findOne({ _id: req.params.id, user: req.user.id }).select("+receiptData");
+    if (!expense?.receiptUrl) return res.sendStatus(404);
+    res.set('Cache-Control', 'private, no-store');
+    if (expense.receiptData) {
+      res.type(expense.receiptMime || 'application/octet-stream');
+      res.attachment(path.basename(expense.receiptUrl));
+      return res.send(expense.receiptData);
+    }
+    res.download(path.join(uploadDir, path.basename(expense.receiptUrl)), path.basename(expense.receiptUrl), error => {
+      if (error && !res.headersSent) { if (error.code === 'ENOENT') res.sendStatus(404); else next(error); }
+    });
+  } catch (error) { next(error); }
+});
 
 router.get("/", protect, async (req, res, next) => {
   try {
@@ -278,6 +295,8 @@ router.post(
         category,
         amount: Number(amount),
         receiptUrl,
+        receiptData: req.file ? await fs.promises.readFile(req.file.path) : undefined,
+        receiptMime: req.file?.mimetype,
         notes,
       });
 
@@ -295,6 +314,8 @@ router.post(
         return res.status(400).json({ success: false, error: error.message });
       }
       next(error);
+    } finally {
+      if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
     }
   }
 );
@@ -334,10 +355,12 @@ router.put(
 
       if (req.file) {
         expense.receiptUrl = `/uploads/${req.file.filename}`;
-        if (oldReceiptUrl) deleteReceiptFile(oldReceiptUrl);
+        expense.receiptData = await fs.promises.readFile(req.file.path);
+        expense.receiptMime = req.file.mimetype;
       }
 
       const updatedExpense = await expense.save();
+      if (req.file && oldReceiptUrl) deleteReceiptFile(oldReceiptUrl);
       res.json({
         success: true,
         expense: updatedExpense,
@@ -351,6 +374,8 @@ router.put(
         return res.status(400).json({ success: false, error: error.message });
       }
       next(error);
+    } finally {
+      if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
     }
   }
 );

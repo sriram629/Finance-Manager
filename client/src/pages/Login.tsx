@@ -11,6 +11,7 @@ import { useToast } from "../hooks/use-toast";
 import api from "@/api/axios";
 import { useAuth } from "@/context/AuthContext";
 import { Github } from "lucide-react";
+import { startSocialLogin } from "@/lib/socialLogin";
 import { GoogleIcon } from "@/components/ui/google-icon";
 
 export default function Login() {
@@ -74,7 +75,7 @@ export default function Login() {
         <div className="space-y-6">
           <div className="text-center space-y-2">
             <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-              Welcome Back
+              Finance Manager
             </h1>
             <p className="text-muted-foreground">Sign in to your account</p>
           </div>
@@ -164,20 +165,16 @@ export default function Login() {
             <Button
               variant="outline"
               className="bg-white/5 border-white/10 hover:bg-white/10 hover:text-white transition-all backdrop-blur-md"
-              asChild
+              onClick={() => startSocialLogin("google").catch(() => toast({ title: "Could not start login", variant: "destructive" }))}
             >
-              <a href={`${import.meta.env.VITE_API_URL}/auth/google`}>
-                <GoogleIcon className="mr-2 h-4 w-4" /> Google
-              </a>
+              <GoogleIcon className="mr-2 h-4 w-4" /> Google
             </Button>
             <Button
               variant="outline"
               className="bg-white/5 border-white/10 hover:bg-white/10 hover:text-white transition-all backdrop-blur-md"
-              asChild
+              onClick={() => startSocialLogin("github").catch(() => toast({ title: "Could not start login", variant: "destructive" }))}
             >
-              <a href={`${import.meta.env.VITE_API_URL}/auth/github`}>
-                <Github className="mr-2 h-4 w-4" /> GitHub
-              </a>
+              <Github className="mr-2 h-4 w-4" /> GitHub
             </Button>
           </div>
         </div>

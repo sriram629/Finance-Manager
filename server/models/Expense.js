@@ -6,12 +6,15 @@ const ExpenseSchema = new mongoose.Schema(
     date: { type: Date, required: true },
     place: { type: String, required: true },
     category: { type: String },
-    amount: { type: Number, required: true },
+    amount: { type: Number, required: true, min: 0, validate: Number.isFinite },
+    receiptData: { type: Buffer, select: false },
+    receiptMime: String,
     receiptUrl: { type: String },
     notes: { type: String },
   },
   {
     timestamps: true,
+    toJSON: { transform: (doc, ret) => { delete ret.receiptData; return ret; } },
   }
 );
 

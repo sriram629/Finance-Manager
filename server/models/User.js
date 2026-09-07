@@ -18,6 +18,13 @@ const UserSchema = new mongoose.Schema(
     lastName: { type: String },
     isVerified: { type: Boolean, default: false },
     otpCode: { type: String },
+    tokenVersion: { type: Number, default: 0 },
+    otpAttempts: { type: Number, default: 0 },
+    otpPurpose: { type: String },
+    pendingEmail: String,
+    emailChangeHash: String,
+    emailChangeExpiresAt: Date,
+    emailChangeAttempts: { type: Number, default: 0 },
     otpExpiresAt: { type: Date },
     googleId: { type: String, unique: true, sparse: true },
     githubId: { type: String, unique: true, sparse: true },
@@ -31,6 +38,7 @@ UserSchema.pre("save", async function (next) {
   if (!this.isModified("password") || !this.password) {
     return next();
   }
+  this.tokenVersion = (this.tokenVersion || 0) + 1;
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();

@@ -1,9 +1,12 @@
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs");
+const uploadDir = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, "../uploads"));
+fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, process.env.UPLOAD_DIR || "uploads/");
+    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -15,9 +18,9 @@ const storage = multer.diskStorage({
 });
 
 const receiptFileFilter = (req, file, cb) => {
-  const filetypes = /jpeg|jpg|png|pdf/;
-  const mimetype = filetypes.test(file.mimetype);
-  const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+  const filetypes = /^(jpeg|jpg|png|pdf)$/;
+  const mimetype = ["image/jpeg", "image/png", "application/pdf"].includes(file.mimetype);
+  const extname = filetypes.test(path.extname(file.originalname).slice(1).toLowerCase());
 
   if (mimetype && extname) {
     return cb(null, true);
@@ -57,4 +60,4 @@ const uploadSchedule = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-module.exports = { uploadReceipt, uploadSchedule };
+module.exports = { uploadReceipt, uploadSchedule, uploadDir };

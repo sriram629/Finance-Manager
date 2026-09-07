@@ -36,6 +36,8 @@ export default function Settings() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [emailCode, setEmailCode] = useState("");
+  const [emailVerificationRequired, setEmailVerificationRequired] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -46,9 +48,10 @@ export default function Settings() {
       const res = await api.put("/user/profile", profileData);
       if (res.data.success) {
         updateUser(res.data.user);
+        setEmailVerificationRequired(!!res.data.emailVerificationRequired);
         toast({
           title: "Profile Updated",
-          description: "Your details have been saved.",
+          description: res.data.emailVerificationRequired ? "Enter the code sent to your new email address to confirm the change." : "Your details have been saved.",
         });
       }
     } catch (err: any) {
@@ -216,6 +219,22 @@ export default function Settings() {
               disabled={profileLoading}
             />
           </div>
+          {emailVerificationRequired && <div className="space-y-2">
+            <Label htmlFor="email-code">Code sent to your new email</Label>
+            <Input id="email-code" inputMode="numeric" maxLength={6} value={emailCode} onChange={e => setEmailCode(e.target.value)} />
+            <Button disabled={profileLoading || emailCode.length !== 6} onClick={async () => {
+              setProfileLoading(true);
+              try {
+                const { data } = await api.post("/user/verify-email-change", { otp: emailCode });
+                updateUser(data.user);
+                setProfileData(data.user);
+                setEmailVerificationRequired(false);
+                setEmailCode("");
+                toast({ title: "Email address verified" });
+              } catch { toast({ title: "Invalid or expired code", variant: "destructive" }); }
+              finally { setProfileLoading(false); }
+            }}>Verify email</Button>
+          </div>}
           <Button onClick={handleProfileSave} disabled={profileLoading}>
             {profileLoading ? <LoadingSpinner /> : "Save Changes"}
           </Button>

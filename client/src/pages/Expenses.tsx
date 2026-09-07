@@ -531,14 +531,23 @@ export default function Expenses() {
                   {editingExpense?.receiptUrl && !form.getValues("receipt") && (
                     <p className="text-sm text-muted-foreground mt-1">
                       Current:{" "}
-                      <a
-                        href={editingExpense.receiptUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const response = await api.get(`/expenses/${editingExpense._id}/receipt`, { responseType: "blob" });
+                            const url = URL.createObjectURL(response.data);
+                            const link = document.createElement("a");
+                            link.href = url;
+                            link.download = editingExpense.receiptUrl?.split("/").pop() || "receipt";
+                            link.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
+                          } catch { toast({ title: "Could not download receipt", variant: "destructive" }); }
+                        }}
                         className="text-primary hover:underline"
                       >
                         {editingExpense.receiptUrl.split("/").pop()}
-                      </a>
+                      </button>
                     </p>
                   )}
                 </div>

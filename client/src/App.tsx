@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "./components/ui/toaster";
 import { Toaster as Sonner } from "./components/ui/sooner";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -6,12 +7,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
-import Home from "./pages/Home";
-import AddSchedule from "./pages/AddSchedule";
-import UploadSchedule from "./pages/UploadSchedule";
-import Expenses from "./pages/Expenses";
-import Reports from "./pages/Reports";
-import Settings from "./pages/Settings";
+const Home = lazy(() => import("./pages/Home"));
+const AddSchedule = lazy(() => import("./pages/AddSchedule"));
+const UploadSchedule = lazy(() => import("./pages/UploadSchedule"));
+const Expenses = lazy(() => import("./pages/Expenses"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Settings = lazy(() => import("./pages/Settings"));
 import { AppLayout } from "./components/layout/AppLayout";
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "./context/AuthContext";
@@ -26,6 +27,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <Suspense fallback={<div role="status" className="p-8 text-center">Loading…</div>}>
           <Routes>
             <Route path="/" element={<Navigate to="/login" replace />} />
             <Route path="/register" element={<Register />} />
@@ -44,6 +46,7 @@ const App = () => (
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

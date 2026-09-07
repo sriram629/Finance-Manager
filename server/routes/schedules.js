@@ -630,7 +630,8 @@ router.post(
       const validDataToStore = [];
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      for (let i = 2; i < jsonData.length; i++) {
+      const firstDataRow = jsonData[1]?.[dateIndex] === "YYYY-MM-DD" ? 2 : 1;
+      for (let i = firstDataRow; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (
           !row ||
@@ -726,10 +727,10 @@ router.post(
           .json({ success: false, error: "No data rows found in the file." });
       }
       const tempFileId = crypto.randomBytes(16).toString("hex");
-      uploadCache.set(tempFileId, validDataToStore);
+      uploadCache.set(tempFileId, { userId: String(req.user.id), rows: validDataToStore });
       setTimeout(() => {
         uploadCache.delete(tempFileId);
-      }, 60 * 60 * 1000);
+      }, 60 * 60 * 1000).unref();
       res.json({
         success: true,
         preview: previewData.slice(0, 10),
@@ -768,12 +769,12 @@ router.post("/confirm-upload", protect, async (req, res, next) => {
     });
   }
   const storedData = uploadCache.get(tempFileId);
-  if (!storedData) {
+  if (!storedData || storedData.userId !== String(req.user.id)) {
     return res
       .status(404)
       .json({ success: false, error: "Upload session expired or invalid ID." });
   }
-  const dataToInsert = storedData.filter((item) =>
+  const dataToInsert = storedData.rows.filter((item) =>
     rowsToImport.includes(item.originalRowIndex + 1)
   );
   if (dataToInsert.length === 0) {
@@ -786,8 +787,9 @@ router.post("/confirm-upload", protect, async (req, res, next) => {
     const cleanDataToInsert = dataToInsert.map(
       ({ originalRowIndex, ...rest }) => rest
     );
-    const createdSchedules = await Schedule.insertMany(cleanDataToInsert);
+    // Claim before the first await so simultaneous confirmations cannot import twice.
     uploadCache.delete(tempFileId);
+    const createdSchedules = await Schedule.insertMany(cleanDataToInsert);
     res.json({
       success: true,
       imported: createdSchedules.length,

@@ -4,7 +4,7 @@ const validationRules = (method) => {
   switch (method) {
     case "register": {
       return [
-        body("email", "Please include a valid email").isEmail(),
+        body("email", "Please include a valid email").isEmail().trim().toLowerCase(),
         body("password", "Password must be at least 6 characters").isLength({
           min: 6,
         }),
@@ -13,13 +13,13 @@ const validationRules = (method) => {
     }
     case "login": {
       return [
-        body("email", "Please include a valid email").isEmail(),
+        body("email", "Please include a valid email").isEmail().trim().toLowerCase(),
         body("password", "Password is required").exists(),
       ];
     }
     case "verifyOtp": {
       return [
-        body("email", "Please include a valid email").isEmail(),
+        body("email", "Please include a valid email").isEmail().trim().toLowerCase(),
         body("otp", "OTP must be a 6-digit number")
           .isLength({ min: 6, max: 6 })
           .isNumeric(),
@@ -27,23 +27,14 @@ const validationRules = (method) => {
     }
     case "resendOtp":
     case "forgotPassword": {
-      return [body("email", "Please include a valid email").isEmail()];
+      return [body("email", "Please include a valid email").isEmail().trim().toLowerCase()];
     }
     case "resetPassword": {
       return [
-        body("email", "Please include a valid email").isEmail(),
+        body("email", "Please include a valid email").isEmail().trim().toLowerCase(),
         body("otp", "OTP must be a 6-digit number")
           .isLength({ min: 6, max: 6 })
           .isNumeric(),
-        body(
-          "newPassword",
-          "New password must be at least 6 characters"
-        ).isLength({ min: 6 }),
-      ];
-    }
-    case "changePassword": {
-      return [
-        body("currentPassword", "Current password is required").exists(),
         body(
           "newPassword",
           "New password must be at least 6 characters"
@@ -61,7 +52,7 @@ const validationRules = (method) => {
     }
     case "updateProfile": {
       return [
-        body("email", "Please include a valid email").isEmail(),
+        body("email", "Please include a valid email").isEmail().trim().toLowerCase(),
         body("firstName", "First name is required").not().isEmpty(),
         body("lastName", "Last name is required").not().isEmpty(),
       ];

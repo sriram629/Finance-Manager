@@ -6,6 +6,9 @@ const User = require("../models/User");
 const Schedule = require("../models/Schedule");
 const Expense = require("../models/Expense");
 const bcrypt = require("bcryptjs");
+const crypto = require("node:crypto");
+const { digest } = require("../utils/authTickets");
+const { sendOtpEmail } = require("../services/emailService");
 
 /**
  * @swagger
@@ -149,13 +152,19 @@ router.put(
               code: "AUTH_002",
             });
           }
-          user.email = req.body.email.toLowerCase();
+          const otp = crypto.randomInt(100000, 1000000).toString();
+          user.pendingEmail = req.body.email.toLowerCase();
+          user.emailChangeHash = digest(otp);
+          user.emailChangeExpiresAt = new Date(Date.now() + 10 * 60_000);
+          user.emailChangeAttempts = 0;
+          await sendOtpEmail(user.pendingEmail, user.firstName, otp);
         }
 
         const updatedUser = await user.save();
 
         res.status(200).json({
           success: true,
+          emailVerificationRequired: !!updatedUser.pendingEmail,
           user: {
             id: updatedUser._id,
             email: updatedUser.email,
@@ -254,7 +263,7 @@ router.get("/export-data", protect, async (req, res, next) => {
     const userId = req.user.id;
 
     const userProfile = await User.findById(userId)
-      .select("-password -otpCode -otpExpiresAt")
+      .select("-password -otpCode -otpExpiresAt -otpPurpose -pendingEmail -emailChangeHash -emailChangeExpiresAt -emailChangeAttempts")
       .lean();
     const schedules = await Schedule.find({ user: userId }).lean();
     const expenses = await Expense.find({ user: userId }).lean();
@@ -277,4 +286,17 @@ router.get("/export-data", protect, async (req, res, next) => {
   }
 });
 
+router.post('/verify-email-change', protect, async (req, res, next) => {
+  try {
+    if (typeof req.body.otp !== 'string' || !/^\d{6}$/.test(req.body.otp)) return res.status(400).json({ error: 'Enter the six-digit code.' });
+    const user = await User.findOneAndUpdate({ _id: req.user.id, pendingEmail: { $exists: true }, emailChangeExpiresAt: { $gt: new Date() }, emailChangeAttempts: { $lt: 5 } }, { $inc: { emailChangeAttempts: 1 } }, { new: true });
+    if (!user || user.emailChangeHash !== digest(req.body.otp)) return res.status(400).json({ error: 'Invalid or expired code.' });
+    const updated = await User.findOneAndUpdate({ _id: user._id, emailChangeHash: user.emailChangeHash, pendingEmail: user.pendingEmail }, { $set: { email: user.pendingEmail }, $unset: { pendingEmail: 1, emailChangeHash: 1, emailChangeExpiresAt: 1, emailChangeAttempts: 1 } }, { new: true });
+    if (!updated) return res.status(400).json({ error: 'Code already used.' });
+    res.json({ success: true, user: { id: updated._id, email: updated.email, firstName: updated.firstName, lastName: updated.lastName } });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'Email already exists.' });
+    next(error);
+  }
+});
 module.exports = router;

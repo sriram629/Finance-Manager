@@ -23,7 +23,7 @@ app.use(passport.initialize());
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(",") || "*",
+    origin: (process.env.ALLOWED_ORIGINS || process.env.CLIENT_URL || "http://localhost:8080").split(",").map(value => value.trim()),
     credentials: true,
   })
 );
@@ -32,7 +32,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(mongoSanitize());
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Receipts are available only through the ownership-checked API route.
 
 app.get("/", (req, res) => {
   res.send("Finance Manager API is running...");

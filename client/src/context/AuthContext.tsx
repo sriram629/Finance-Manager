@@ -1,5 +1,8 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+
+import api from "@/api/axios";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface UserInfo {
   id: string;
@@ -32,20 +35,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const login = (userData: UserInfo, token: string) => {
+  const login = useCallback((userData: UserInfo, token: string) => {
+    queryClient.clear();
     localStorage.setItem("authToken", token);
     localStorage.setItem("userInfo", JSON.stringify(userData));
     setUser(userData);
-    navigate("/home");
-  };
+    navigate("/home", { replace: true });
+  }, [navigate, queryClient]);
 
-  const logout = () => {
+  const logout = useCallback(() => {
+    delete api.defaults.headers.common.Authorization;
+    queryClient.clear();
     localStorage.removeItem("authToken");
     localStorage.removeItem("userInfo");
     setUser(null);
-    navigate("/login");
-  };
+    navigate("/login", { replace: true });
+  }, [navigate, queryClient]);
+
+  useEffect(() => {
+    window.addEventListener("auth:expired", logout);
+    return () => window.removeEventListener("auth:expired", logout);
+  }, [logout]);
 
   const updateUser = (userData: UserInfo) => {
     setUser(userData);

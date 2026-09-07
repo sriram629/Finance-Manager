@@ -7,6 +7,10 @@ const { validationRules, validate } = require("../utils/validation");
 const jwt = require("jsonwebtoken");
 const { protect: verifyToken } = require("../middleware/authMiddleware");
 const passport = require("../config/passport");
+const tickets = require("../utils/authTickets");
+const { origin } = require("../utils/origins");
+const clientOrigin = origin(process.env.CLIENT_URL || "http://localhost:8080", "CLIENT_URL");
+const crypto = require("node:crypto");
 
 /**
  * @swagger
@@ -198,13 +202,15 @@ router.post(
         user = new User({ email });
       }
 
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpCode = crypto.randomInt(100000, 1000000).toString();
       const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
       user.password = password;
       user.firstName = firstName;
       user.lastName = lastName;
-      user.otpCode = otpCode;
+      user.otpCode = tickets.digest(otpCode);
+      user.otpPurpose = "verify";
+      user.otpAttempts = 0;
       user.otpExpiresAt = otpExpiresAt;
 
       await user.save();
@@ -256,26 +262,29 @@ router.post(
   async (req, res, next) => {
     try {
       const { email, otp } = req.body;
-      const user = await User.findOne({ email });
+      const user = await User.findOneAndUpdate({ email, otpPurpose: "verify", otpExpiresAt: { $gt: new Date() }, $or: [{ otpAttempts: { $lt: 5 } }, { otpAttempts: { $exists: false } }] }, { $inc: { otpAttempts: 1 } }, { new: true });
 
       if (!user) {
         return res
           .status(400)
           .json({ success: false, error: "Invalid user", code: "AUTH_001" });
       }
-      if (user.otpCode !== otp) {
+      if (user.otpPurpose !== "verify" || user.otpCode !== tickets.digest(otp)) {
         return res
           .status(400)
           .json({ success: false, error: "Invalid OTP", code: "AUTH_003" });
       }
-      if (new Date() > user.otpExpiresAt) {
+      if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
         return res
           .status(410)
           .json({ success: false, error: "OTP expired", code: "AUTH_004" });
       }
 
+      const claimed = await User.findOneAndUpdate({ _id: user._id, otpCode: user.otpCode, otpPurpose: user.otpPurpose, otpExpiresAt: { $gt: new Date() } }, { $unset: { otpCode: 1, otpPurpose: 1, otpExpiresAt: 1 } });
+      if (!claimed) return res.status(400).json({ success: false, error: "Code already used or expired" });
       user.isVerified = true;
       user.otpCode = undefined;
+      user.otpPurpose = undefined;
       user.otpExpiresAt = undefined;
       await user.save();
 
@@ -340,7 +349,7 @@ router.post(
 
       res.status(200).json({
         success: true,
-        token: generateToken(user._id),
+        token: generateToken(user._id, user.tokenVersion),
         user: {
           id: user._id,
           email: user.email,
@@ -397,8 +406,10 @@ router.post(
           .json({ success: false, error: "Account already verified" });
       }
 
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      user.otpCode = otpCode;
+      const otpCode = crypto.randomInt(100000, 1000000).toString();
+      user.otpCode = tickets.digest(otpCode);
+      user.otpPurpose = "verify";
+      user.otpAttempts = 0;
       user.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
       await user.save();
 
@@ -449,8 +460,10 @@ router.post(
           .json({ success: false, error: "User not found" });
       }
 
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      user.otpCode = otpCode;
+      const otpCode = crypto.randomInt(100000, 1000000).toString();
+      user.otpCode = tickets.digest(otpCode);
+      user.otpPurpose = "reset";
+      user.otpAttempts = 0;
       user.otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
       await user.save();
 
@@ -503,27 +516,30 @@ router.post(
   async (req, res, next) => {
     try {
       const { email, otp, newPassword } = req.body;
-      const user = await User.findOne({ email });
+      const user = await User.findOneAndUpdate({ email, otpPurpose: "reset", otpExpiresAt: { $gt: new Date() }, $or: [{ otpAttempts: { $lt: 5 } }, { otpAttempts: { $exists: false } }] }, { $inc: { otpAttempts: 1 } }, { new: true });
 
       if (!user) {
         return res
           .status(400)
           .json({ success: false, error: "Invalid user", code: "AUTH_001" });
       }
-      if (user.otpCode !== otp) {
+      if (user.otpPurpose !== "reset" || user.otpCode !== tickets.digest(otp)) {
         return res
           .status(400)
           .json({ success: false, error: "Invalid OTP", code: "AUTH_003" });
       }
-      if (new Date() > user.otpExpiresAt) {
+      if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
         return res
           .status(410)
           .json({ success: false, error: "OTP expired", code: "AUTH_004" });
       }
 
       user.password = newPassword;
+      const claimed = await User.findOneAndUpdate({ _id: user._id, otpCode: user.otpCode, otpPurpose: user.otpPurpose, otpExpiresAt: { $gt: new Date() } }, { $unset: { otpCode: 1, otpPurpose: 1, otpExpiresAt: 1 } });
+      if (!claimed) return res.status(400).json({ success: false, error: "Code already used or expired" });
       user.isVerified = true;
       user.otpCode = undefined;
+      user.otpPurpose = undefined;
       user.otpExpiresAt = undefined;
       await user.save();
 
@@ -568,11 +584,14 @@ router.get(
   "/google/callback",
   passport.authenticate("google", {
     session: false,
-    failureRedirect: `${process.env.CLIENT_URL}/login?error=Google+login+failed`,
+    failureRedirect: `${clientOrigin}/login?error=Google+login+failed`,
   }),
-  (req, res) => {
-    const token = generateToken(req.user._id);
-    res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+  async (req, res, next) => {
+    try {
+      const code = await tickets.issue("login", req.user._id, 60_000, req.oauthChallenge);
+      res.set("Cache-Control", "no-store");
+      res.redirect(`${clientOrigin}/auth/callback#code=${code}`);
+    } catch (error) { next(error); }
   }
 );
 
@@ -584,12 +603,25 @@ router.get(
   "/github/callback",
   passport.authenticate("github", {
     session: false,
-    failureRedirect: `${process.env.CLIENT_URL}/login?error=GitHub+login+failed`,
+    failureRedirect: `${clientOrigin}/login?error=GitHub+login+failed`,
   }),
-  (req, res) => {
-    const token = generateToken(req.user._id);
-    res.redirect(`${process.env.CLIENT_URL}/auth/callback?token=${token}`);
+  async (req, res, next) => {
+    try {
+      const code = await tickets.issue("login", req.user._id, 60_000, req.oauthChallenge);
+      res.set("Cache-Control", "no-store");
+      res.redirect(`${clientOrigin}/auth/callback#code=${code}`);
+    } catch (error) { next(error); }
   }
 );
 
+router.post('/exchange', async (req, res, next) => {
+  try {
+    if (typeof req.body.verifier !== 'string' || !/^[a-f0-9]{64}$/.test(req.body.verifier)) return res.status(401).json({ success: false, error: 'Login expired. Please sign in again.' });
+    const ticket = await tickets.consume(req.body.code, 'login', tickets.digest(req.body.verifier));
+    const user = ticket && await User.findById(ticket.user);
+    if (!user?.isVerified) return res.status(401).json({ success: false, error: 'Login expired. Please sign in again.' });
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, token: generateToken(user._id, user.tokenVersion), user: { id: user._id, email: user.email, firstName: user.firstName, lastName: user.lastName } });
+  } catch (error) { next(error); }
+});
 module.exports = router;
