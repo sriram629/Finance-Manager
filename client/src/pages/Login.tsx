@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { AuthBackground } from "../components/auth/AuthBackground";
 import { GlassCard } from "../components/auth/GlassCard";
@@ -15,6 +15,7 @@ import { startSocialLogin } from "@/lib/socialLogin";
 import { GoogleIcon } from "@/components/ui/google-icon";
 
 export default function Login() {
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -79,6 +80,12 @@ export default function Login() {
             </h1>
             <p className="text-muted-foreground">Sign in to your account</p>
           </div>
+
+          {searchParams.has("error") && (
+            <p role="alert" className="text-sm text-destructive">
+              Social sign-in could not be completed. Please try again and allow cookies for this site. Your provider account needs a verified email address.
+            </p>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">

@@ -20,3 +20,7 @@ client/.env
 # OS
 .DS_Store
 Thumbs.db
+**/sample
+**/.env*
+**/uploads
+**/test

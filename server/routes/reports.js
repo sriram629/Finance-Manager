@@ -206,6 +206,12 @@ const getPeriod = (period, startDate, endDate) => {
   return { start, end };
 };
 
+const safeExportRows = (rows, format) => format !== "csv" ? rows : rows.map(row =>
+  Object.fromEntries(Object.entries(row).map(([key, value]) => [key,
+    typeof value === "string" && /^[\s]*[=+@-]|^[\t\r\n]/.test(value) ? `'${value}` : value,
+  ]))
+);
+
 const formatCurrency = (value) => {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -821,13 +827,7 @@ router.post("/generate", protect, async (req, res, next) => {
       }
       doc.end();
     } else {
-      if (reportType !== "combined") {
-        dataToExport = dataToExport.map(
-          ({ "Report Section": _, ...rest }) => rest
-        );
-      }
-
-      const worksheet = xlsx.utils.json_to_sheet(dataToExport, {
+      const worksheet = xlsx.utils.json_to_sheet(safeExportRows(dataToExport, format), {
         header: headers.length > 0 ? headers : undefined,
       });
       const workbook = xlsx.utils.book_new();
@@ -918,7 +918,7 @@ router.get("/quick-export", protect, async (req, res, next) => {
     let filename = `quick_export_${preset}_${
       new Date().toISOString().split("T")[0]
     }`;
-    const worksheet = xlsx.utils.json_to_sheet(dataToExport, {
+    const worksheet = xlsx.utils.json_to_sheet(safeExportRows(dataToExport, format), {
       header: headers.length > 0 ? headers : undefined,
     });
     const workbook = xlsx.utils.book_new();

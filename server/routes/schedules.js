@@ -5,7 +5,7 @@ const { uploadSchedule } = require("../middleware/uploadMiddleware");
 const mongoose = require("mongoose");
 const Schedule = require("../models/Schedule");
 const xlsx = require("xlsx");
-const path = require("path");
+const multer = require("multer");
 const crypto = require("crypto");
 const fs = require("fs");
 
@@ -787,7 +787,6 @@ router.post("/confirm-upload", protect, async (req, res, next) => {
     const cleanDataToInsert = dataToInsert.map(
       ({ originalRowIndex, ...rest }) => rest
     );
-    // Claim before the first await so simultaneous confirmations cannot import twice.
     uploadCache.delete(tempFileId);
     const createdSchedules = await Schedule.insertMany(cleanDataToInsert);
     res.json({

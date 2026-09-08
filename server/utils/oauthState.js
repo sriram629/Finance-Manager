@@ -14,7 +14,7 @@ class OAuthStateStore {
   verify(req, state, done) {
     const cookie = (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${this.cookie}=`))?.slice(this.cookie.length + 1);
     req.res.clearCookie(this.cookie, this.options());
-    if (typeof state !== 'string' || !cookie || !/^[a-f0-9]{64}$/.test(state) || cookie.length !== state.length || !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(cookie))) {
+    if (typeof state !== 'string' || !cookie || !/^[a-f0-9]{64}$/.test(state) || !/^[a-f0-9]{64}$/.test(cookie) || !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(cookie))) {
       return done(null, false, { message: 'Invalid OAuth state' });
     }
     consume(state, `state:${this.provider}`).then(ticket => { req.oauthChallenge = ticket?.challenge; done(null, !!ticket); }, done);

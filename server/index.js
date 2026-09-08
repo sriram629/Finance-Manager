@@ -3,8 +3,8 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 const express = require("express");
-const cors = require("cors");
 const path = require("path");
+const cors = require("cors");
 const connectDB = require("./config/db");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./config/swagger");
@@ -15,7 +15,6 @@ const mongoSanitize = require("express-mongo-sanitize");
 const rateLimit = require("express-rate-limit");
 const passport = require("./config/passport");
 
-connectDB();
 
 const app = express();
 app.set("trust proxy", 1);
@@ -32,11 +31,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(mongoSanitize());
 
-// Receipts are available only through the ownership-checked API route.
 
-app.get("/", (req, res) => {
-  res.send("Finance Manager API is running...");
-});
+if (process.env.SERVE_CLIENT !== "true") {
+  app.get("/", (req, res) => res.send("Finance Manager API is running..."));
+}
 
 app.get("/api/health", (req, res) => {
   res.json({
@@ -77,13 +75,23 @@ app.use("/api/schedules", protect, apiLimiter, require("./routes/schedules"));
 app.use("/api/expenses", protect, apiLimiter, require("./routes/expenses"));
 app.use("/api/reports", protect, apiLimiter, require("./routes/reports"));
 
+if (process.env.SERVE_CLIENT === "true") {
+  const clientDirectory = path.join(__dirname, "../client/dist");
+  app.use("/api", notFound);
+  app.use(express.static(clientDirectory, { index: false, dotfiles: "deny" }));
+  app.get(["/", "/login", "/register", "/forgot-password", "/auth/callback", "/home", "/add-schedule", "/upload-schedule", "/expenses", "/reports", "/settings"], (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.sendFile(path.join(clientDirectory, "index.html"));
+  });
+}
+
 app.use(notFound);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5050;
 
-app.listen(PORT, () => {
+connectDB().then(() => app.listen(PORT, () => {
   console.log(
     `✅ Server running in ${process.env.NODE_ENV} mode on port ${PORT}`
   );
-});
+}));

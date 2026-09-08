@@ -4,7 +4,6 @@ const User = require("../models/User");
 const { sendOtpEmail } = require("../services/emailService");
 const generateToken = require("../utils/generateToken");
 const { validationRules, validate } = require("../utils/validation");
-const jwt = require("jsonwebtoken");
 const { protect: verifyToken } = require("../middleware/authMiddleware");
 const passport = require("../config/passport");
 const tickets = require("../utils/authTickets");
@@ -576,43 +575,32 @@ router.get("/protected", verifyToken, (req, res) => {
   });
 });
 
-router.get(
-  "/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
-);
-router.get(
-  "/google/callback",
-  passport.authenticate("google", {
-    session: false,
-    failureRedirect: `${clientOrigin}/login?error=Google+login+failed`,
-  }),
-  async (req, res, next) => {
-    try {
-      const code = await tickets.issue("login", req.user._id, 60_000, req.oauthChallenge);
-      res.set("Cache-Control", "no-store");
-      res.redirect(`${clientOrigin}/auth/callback#code=${code}`);
-    } catch (error) { next(error); }
-  }
-);
+for (const [provider, scope] of [["google", ["profile", "email"]], ["github", ["user:email"]]]) {
+  const fail = (req, res) => {
+    res.clearCookie(`fm_oauth_${provider}`, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: `/api/auth/${provider}`,
+    });
+    res.set("Cache-Control", "no-store");
+    return res.redirect(`${clientOrigin}/login?error=oauth_failed`);
+  };
 
-router.get(
-  "/github",
-  passport.authenticate("github", { scope: ["user:email"] })
-);
-router.get(
-  "/github/callback",
-  passport.authenticate("github", {
-    session: false,
-    failureRedirect: `${clientOrigin}/login?error=GitHub+login+failed`,
-  }),
-  async (req, res, next) => {
-    try {
-      const code = await tickets.issue("login", req.user._id, 60_000, req.oauthChallenge);
-      res.set("Cache-Control", "no-store");
-      res.redirect(`${clientOrigin}/auth/callback#code=${code}`);
-    } catch (error) { next(error); }
-  }
-);
+  router.get(`/${provider}`, passport.authenticate(provider, { scope, session: false }),
+    (error, req, res, next) => fail(req, res));
+
+  router.get(`/${provider}/callback`, (req, res, next) => {
+    passport.authenticate(provider, { session: false }, async (error, user) => {
+      if (error || !user || !/^[a-f0-9]{64}$/.test(req.oauthChallenge || "")) return fail(req, res);
+      try {
+        const code = await tickets.issue("login", user._id, 60_000, req.oauthChallenge);
+        res.set("Cache-Control", "no-store");
+        res.redirect(`${clientOrigin}/auth/callback#code=${code}`);
+      } catch (error) { fail(req, res); }
+    })(req, res, next);
+  });
+}
 
 router.post('/exchange', async (req, res, next) => {
   try {
