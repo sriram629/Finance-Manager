@@ -29,14 +29,11 @@ const receiptFileFilter = (req, file, cb) => {
 };
 
 const scheduleFileFilter = (req, file, cb) => {
-  const filetypes = /xlsx|xls|csv/;
-  const mimetype =
-    filetypes.test(file.mimetype) ||
-    file.mimetype ===
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-    file.mimetype === "application/vnd.ms-excel" ||
-    file.mimetype === "text/csv";
-  const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel", "text/csv", "application/csv",
+  ].includes(file.mimetype);
+  const extname = /^(xlsx|xls|csv)$/.test(path.extname(file.originalname).slice(1).toLowerCase());
 
   if (mimetype && extname) {
     return cb(null, true);

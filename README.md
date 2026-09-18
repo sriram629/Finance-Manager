@@ -370,3 +370,19 @@ This project is open source and available under the MIT License.
 ---
 
 **Built with ❤️ using React, TypeScript, Express, and MongoDB**
+
+
+## Deploy on another platform
+
+Use the root `Dockerfile` on a host that supports a persistent Node service (for example Railway). It builds and serves both the frontend and API at one HTTPS origin. Set the repository root as the build context and use `/api/health` as the health-check path. Use one application replica until spreadsheet upload previews are moved from memory to shared storage.
+
+Set these private runtime variables in the host dashboard: `DATABASE_URL`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `EMAILJS_SERVICE_ID`, `EMAILJS_FINANCE_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, and `EMAILJS_PRIVATE_KEY`. Preserve the existing database connection to retain accounts and records. Do not put these values in Git or frontend build variables.
+
+After the host assigns an HTTPS domain, set `SERVER_URL`, `CLIENT_URL`, and `ALLOWED_ORIGINS` to that same origin, without an `/api` suffix. The container already sets `NODE_ENV=production`, `SERVE_CLIENT=true`, and builds the frontend with `/api`. Configure the provider callbacks as:
+
+- Google: `https://YOUR-HOST/api/auth/google/callback`
+- GitHub: `https://YOUR-HOST/api/auth/github/callback`
+
+Update the OAuth app homepage and Google authorized JavaScript origin to the new origin as applicable. Redeploy after setting the URLs, then check both providers from the new login page. Keep the previous deployment until the new login and data access have been verified. Host migration does not determine or resolve Google's original security classification.
+
+For local container use, `docker compose up --build` loads `server/.env` and serves the app at `http://localhost:5050`. Its development settings are only for local use. The production Dockerfile excludes environment files, uploads, tests, and `sample/` from the build context.

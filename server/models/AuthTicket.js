@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-// Only hashes are persisted; findOneAndDelete makes redemption single-use.
 const schema = new mongoose.Schema({
   digest: { type: String, required: true, unique: true },
   challenge: String,

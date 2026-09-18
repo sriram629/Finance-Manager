@@ -8,16 +8,13 @@ const serverOrigin = origin(process.env.SERVER_URL || process.env.RENDER_EXTERNA
 
 const handleSocialLogin = async (provider, profile, done) => {
   try {
-    // Never link accounts using an email the provider has not verified.
     const verifiedEmail = profile.emails?.find(e => e.verified === true) ||
       (provider === 'google' && profile._json?.email_verified === true ? profile.emails?.[0] : undefined);
     const email = verifiedEmail?.value?.trim().toLowerCase();
 
-    // 1. Try to find by social ID
     let user = await User.findOne({ [`${provider}Id`]: profile.id });
     if (user) return done(null, user);
 
-    // 2. Try to find by email (link accounts)
     if (email) {
       user = await User.findOne({ email });
       if (user) {
@@ -32,14 +29,12 @@ const handleSocialLogin = async (provider, profile, done) => {
 
     if (!email) return done(null, false);
 
-    // 3. Create new user
     const firstName =
       profile.displayName?.split(" ")[0] || profile.username || "User";
     const lastName = profile.displayName?.split(" ").slice(1).join(" ") || "";
 
     const newUser = new User({
       [`${provider}Id`]: profile.id,
-      // Fallback if absolutely NO email is returned (rare but possible with strict privacy settings)
       email,
       firstName,
       lastName,

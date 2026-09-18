@@ -33,5 +33,10 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
-      - run: npm test
+      - run: find . -path ./node_modules -prune -o -name "*.js" -exec node --check {} \;
       - run: npm audit --audit-level=moderate
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag finance-manager:ci .
