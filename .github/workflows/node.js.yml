@@ -19,7 +19,9 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit -p tsconfig.app.json
       - run: npm run build
-      - run: npm audit --audit-level=moderate
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: node --test ../scripts/audit-client.test.mjs
+      - run: node ../scripts/audit-client.mjs
   server:
     runs-on: ubuntu-latest
     defaults:
