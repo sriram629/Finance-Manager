@@ -1,3 +1,4 @@
+import { Brand } from "../Brand";
 import { Menu, LogOut, User } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import {
@@ -39,14 +40,13 @@ export const Navbar = ({ onToggleSidebar }: NavbarProps) => {
             variant="ghost"
             size="icon"
             onClick={onToggleSidebar}
+            aria-label="Toggle navigation"
             className="hover:bg-accent/50"
           >
             <Menu className="h-5 w-5" />
           </Button>
 
-          <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            FinanceManager
-          </h1>
+          <Brand className="text-sm sm:text-lg" />
         </div>
 
         <DropdownMenu>

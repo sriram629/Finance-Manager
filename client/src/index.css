@@ -84,3 +84,21 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Keep the backdrop inside each auth page's stacking context. */
+.auth-page { position: relative; isolation: isolate; min-height: 100dvh; }
+.auth-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(ellipse at 15% 15%, hsl(250 55% 28% / .3), transparent 55%),
+    linear-gradient(hsl(250 30% 60% / .035) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(250 30% 60% / .035) 1px, transparent 1px);
+  background-size: auto, 64px 64px, 64px 64px;
+}
+.auth-brand { display: flex; justify-content: center; margin-bottom: 26px; font-size: 16px; }
+/* Accessible brand links against the dark auth surfaces. */
+.auth-page a.text-primary { color: hsl(255 85% 78%); }

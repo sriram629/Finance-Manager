@@ -146,7 +146,7 @@ export default function Register() {
     }
   };
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="auth-page flex items-center justify-center p-4">
       <AuthBackground />
 
       <GlassCard>
