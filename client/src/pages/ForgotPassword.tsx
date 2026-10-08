@@ -151,7 +151,7 @@ export default function ForgotPassword() {
         description:
           response.data.message || "You can now login with your new password",
       });
-      navigate("/");
+      navigate("/login");
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setLoading(false);
@@ -164,14 +164,14 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="auth-page flex items-center justify-center p-4">
       <AuthBackground />
 
       <GlassCard>
         <div className="space-y-6">
           <div className="flex items-center gap-4">
             <Link
-              to="/"
+              to="/login"
               className="text-muted-foreground hover:text-foreground transition-colors"
               aria-label="Back to login"
             >
@@ -329,7 +329,7 @@ export default function ForgotPassword() {
           </div>
 
           <p className="text-center text-sm">
-            <Link to="/" className="text-primary hover:underline font-medium">
+            <Link to="/login" className="text-primary hover:underline font-medium">
               Back to Login
             </Link>
           </p>
