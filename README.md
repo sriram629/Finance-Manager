@@ -1,281 +1,353 @@
-# 💰 Finance Manager: Intelligent Financial Dashboard for Professionals
+# 💰 Finance Manager: Income, Expenses & Work Schedules
 
-Finance Manager is a secure, full-stack financial dashboard designed for students and professionals managing both full-time and part-time work. Built with real-time KPI tracking, automated bulk data ingestion, and cross-platform reporting capabilities, it simplifies personal finance management while maintaining enterprise-grade security.
+Finance Manager combines work schedules and expense records in a React and Express application. Users can import hourly schedules, review income and spending, and export reports as PDF, CSV, or Excel. MongoDB stores account data and financial records.
 
 ---
 
 ## 🎯 The "Why"
-Managing multiple income streams, tracking expenses across categories, and generating financial reports shouldn't require complex spreadsheets or expensive software. **Finance Manager** provides a unified platform with real-time visualizations, automated data processing, and flexible reporting—all secured with production-ready API protection.
+
+People who work variable hours need a record of both their shifts and their expenses. Finance Manager brings those records into one application. Its spreadsheet import includes a validation preview before records are saved, while reports can be filtered by date and exported for further review.
+
+The project focuses on schedule-based income tracking. The monthly income estimate extrapolates from recorded hourly earnings; it is not a predictive budget model. Monthly-salary calculations currently differ between views, as documented below.
 
 ---
 
 ## 🛠 Tech Stack
 
 ### Frontend
-* **Framework:** React 19 with TypeScript, Vite
-* **Styling:** Tailwind CSS, Shadcn UI
-* **State Management:** TanStack Query (React Query), Context API
-* **Forms & Validation:** React Hook Form, Zod
-* **Data Visualization:** Recharts
+
+* **Framework:** React 18.3, TypeScript, Vite 7
+* **Styling:** Tailwind CSS, shadcn/ui and Radix UI components
+* **State:** TanStack Query and authentication Context
+* **Forms:** React Hook Form and Zod
+* **Charts:** Recharts
 
 ### Backend
-* **Runtime:** Node.js, Express.js
-* **Database:** MongoDB (Mongoose ODM)
-* **Authentication:** Passport.js (Local, Google, GitHub), JWT
-* **Email Service:** Resend API for OTP verification
-* **File Processing:** Multer (receipt uploads), xlsx (CSV/Excel parsing)
-* **Report Generation:** PDFKit (PDF), xlsx (Excel/CSV exports)
+
+* **Runtime:** Node.js and Express
+* **Database:** MongoDB with Mongoose
+* **Authentication:** JWT, bcryptjs, Passport Google/GitHub strategies
+* **Email:** EmailJS for verification and recovery codes
+* **Files & Reports:** Multer, SheetJS (`xlsx`), PDFKit
+* **API Documentation:** Swagger UI and swagger-jsdoc
 
 ### Security & DevOps
-* **API Protection:** Rate-limiting, throttling, NoSQL injection sanitization
-* **Session Management:** JWT-based secure authentication
-* **Containerization:** Docker, Docker Compose
-* **Deployment:** Render (container-based hosting)
+
+* **Request Controls:** Helmet headers, CORS, rate limits, and MongoDB operator sanitization
+* **Authorization:** Verified-account checks, JWT token-version checks, and user-scoped record queries
+* **Containers:** Root Dockerfile and Docker Compose for a combined frontend/API service
+* **CI:** GitHub Actions for frontend checks, dependency audits, backend syntax checks, and container builds
 
 ---
 
 ## ✨ Key Features
 
-### 📊 Real-Time Financial Dashboard
-* **Dynamic KPI Tracking:** View Current Income, Current Expenses, and Net Income with instant updates
-* **Flexible Time Ranges:** Analyze financial data by Week, Month, or Custom date ranges
-* **Interactive Visualizations:**
-  - **Pie Chart:** Expense breakdown by category for spending pattern analysis
-  - **Comparative Bar Chart:** Week-over-week income vs. expense trends
-  - **Schedule Overview:** Upcoming work schedules with date, type (Full-time/Part-time), hours, and pay rates
+### 📊 Financial Dashboard
+
+* **Income and Expenses:** Review totals and net income within a selected date range.
+* **Charts:** Daily hourly income, expenses by category, and weekly income/expense trends.
+* **Schedule View:** Inspect work entries and switch the date filters or future-schedule view.
+
+Data is fetched through REST endpoints and cached with TanStack Query. Dashboard queries have a five-minute stale time and do not refetch on window focus. The application does not provide a server-pushed live financial feed.
 
 ### 📅 Schedule Management
-* **Flexible Work Tracking:** Support for both hourly and fixed-salary schedules
-* **Recurring Schedules:** Multi-day selection for repeating weekly shifts
-* **Form Validation:** Comprehensive input validation for name, date, type, hours, and pay rates
-* **Schedule Types:** Full-time and Part-time classification for accurate income calculations
 
-### 📤 Automated Data Ingestion Engine
-* **Bulk CSV Upload:** Pre-defined template available for download to standardize data format
-* **Validation Preview:** Review and verify imported data before final submission
-* **70% Time Reduction:** Eliminates manual entry for multiple schedules, dramatically reducing data-entry time
-* **Error Handling:** Comprehensive validation to ensure data integrity during bulk imports
+* **Pay Types:** Create hourly schedules with hours and rate, or monthly schedules with a salary value.
+* **Selected Weekdays:** Repeated entries are created for selected weekdays within the chosen week's remaining dates. This action does not establish an ongoing recurrence rule.
+* **Record Editing:** Update or delete individual schedules associated with the signed-in account.
+
+### 📤 Spreadsheet Import & Validation
+
+* **Accepted Files:** CSV, XLS, and XLSX uploads up to 10 MB. Only the first worksheet is parsed.
+* **Required Columns:** `date`, `hours`, and `hourly_rate`; optional columns are `tag` and `notes`.
+* **Preview:** The API returns the first ten preview rows with valid/invalid counts. Valid hourly entries are retained in a user-scoped, in-memory upload session for one hour.
+* **Confirmation:** Selected valid row numbers are submitted through a separate confirmation request before insertion into MongoDB. Restarting the server discards pending previews.
+
+Dates use `YYYY-MM-DD`. Hours must be greater than zero and at most 24. Import validation rejects missing or invalid values; inspect the preview before confirmation.
 
 ### 💸 Expense Tracking
-* **Category-Based Logging:** Track expenses with predefined categories for better organization
-* **Receipt Management:** Optional digital receipt uploads for record-keeping
-* **Flexible Fields:** Date, amount, optional name, optional receipt, and category selection
-* **Visual Analysis:** Automatic integration with dashboard pie charts for spending insights
 
-### 📑 Cross-Platform Reporting Module
-* **Multiple Export Formats:** Generate reports in PDF, CSV, and Excel (XLSX) formats
-* **Custom Date Filtering:** Select Week, Month, or Custom ranges for precise financial audits
-* **Report Types:**
-  - **Schedules Only:** Work history and income breakdown
-  - **Expenses Only:** Spending analysis by category
-  - **Full Report:** Comprehensive financial overview combining income and expenses
-* **Professional Formatting:** Audit-ready reports suitable for personal and professional accounting
+* **Expense Records:** Add a date, place, and amount, with category and notes as applicable.
+* **Receipts:** Attach JPEG, PNG, or PDF files up to 5 MB. New receipt bytes are stored with the expense in MongoDB after temporary upload processing.
+* **Private Retrieval:** Receipt requests require authentication and ownership of the expense. Older records may rely on a local upload file.
 
-### 🔐 Enterprise-Grade Security
-* **100% Protection:** Robust API rate-limiting and throttling to prevent automated security threats
-* **Authentication System:** Email/password with OTP verification, plus social login (Google/GitHub)
-* **JWT Session Management:** Secure token-based authentication with configurable expiration
-* **Data Sanitization:** NoSQL injection protection and input validation across all endpoints
-* **Password Security:** Bcrypt hashing for credential storage
+### 📑 Report Exports
+
+* **Scope:** Export schedules, expenses, or combined records for a selected period.
+* **Formats:** PDFKit produces PDF reports; SheetJS produces CSV and XLSX files.
+* **Review:** Compare monthly-salary figures with the calculation limitations below before relying on exported totals.
+
+### 🔐 Account Access
+
+* **Email Accounts:** Registration, OTP verification, password login, and recovery through EmailJS.
+* **Social Login:** Google and GitHub sign-in through backend Passport strategies.
+* **Session Checks:** Signed JWTs identify the account; protected routes also check verification status and token version.
 
 ### 🖥️ Responsive Interface
-* **Consistent Layout:** Sidebar, navbar, and content area structure across all pages
-* **User Profile:** Hover-activated dropdown displaying name, email, and logout option
-* **Navigation:** Quick access to Dashboard, Add Schedules, Upload Schedules, Add Expenses, Reports, and Settings
-* **Settings Panel:** Password update and profile management capabilities
+
+* **Navigation:** Dashboard, schedule entry/import, expenses, reports, and settings share a common layout.
+* **Settings:** Profile changes, password changes, and account-data export are available through account routes.
 
 ---
 
 ## 🔄 Application Architecture
 
+The frontend calls an Express REST API. Common middleware runs before route handlers. Authentication routes have their own rate limiter; financial routes require a verified user and a valid token before their shared API limiter and handlers run.
+
 ```mermaid
-graph TD
-    A[User Login] --> B[JWT Authentication]
-    B --> C[Dashboard View]
-    
-    C --> D[Real-Time KPI Calculation]
-    D --> E[MongoDB Aggregation Pipeline]
-    E --> F[Recharts Visualization]
-    
-    C --> G[Schedule Management]
-    G --> H[Add Schedule Form]
-    G --> I[Bulk CSV Upload]
-    I --> J[xlsx Parser]
-    J --> K[Validation Preview]
-    K --> L[Database Insert]
-    
-    C --> M[Expense Tracking]
-    M --> N[Category-Based Form]
-    N --> O[Optional Receipt Upload]
-    O --> P[Multer Storage]
-    P --> L
-    
-    C --> Q[Reports Module]
-    Q --> R{Export Format}
-    R -- PDF --> S[PDFKit Generator]
-    R -- CSV --> T[xlsx CSV Export]
-    R -- Excel --> U[xlsx XLSX Export]
-    
-    B --> V[Rate Limiting Middleware]
-    V --> W[Throttling Layer]
-    W --> X[NoSQL Injection Sanitization]
+flowchart TD
+    A["React interface"] --> B["Express: Helmet, CORS, body parsing, sanitization"]
+    B --> C{"Request group"}
+    C -- Authentication --> D["Authentication rate limit"]
+    D --> E{"Login method"}
+    E -- Email --> F["Register and verify OTP, or validate password login"]
+    F -. "Verification and recovery codes" .-> EM["EmailJS"]
+    E -- Social --> G["Passport provider flow and state validation"]
+    G --> H["Short-lived login ticket returned to frontend"]
+    H --> I["Exchange ticket with verifier"]
+    F --> J["Issue JWT after successful authentication"]
+    I --> J
+    J --> A
+    C -- Financial or profile API --> K["Verify JWT, account status, and token version"]
+    K --> L["Protected API rate limit"]
+    L --> M{"Operation"}
+    M -- Schedules --> N["Validate and create, edit, or delete owned records"]
+    M -- Import --> O["Multer upload and first-sheet parsing"]
+    O --> P["Validate rows and return preview with upload ID"]
+    P --> Q["User confirms selected rows in a separate request"]
+    Q --> R["Recheck authentication and upload-session ownership"]
+    R --> S["Insert selected valid rows"]
+    N --> DB[("MongoDB")]
+    S --> DB
+    M -- Expenses --> T["Owned expense records and optional receipt bytes"]
+    T --> DB
+    M -- Dashboard --> U["Query user records and aggregate by date or category"]
+    DB --> U
+    U --> V["JSON response to Recharts"]
+    M -- Profile --> PR["Read or update authenticated account"]
+    PR --> DB
+    M -- Reports --> W["Query user records for selected period"]
+    DB --> W
+    W --> X{"Output format"}
+    X -- PDF --> Y["PDFKit"]
+    X -- CSV or XLSX --> Z["SheetJS"]
+    Y --> DL["Download report"]
+    Z --> DL
 ```
+
+The confirmation endpoint traverses the same protected middleware as other financial requests. Its upload session holds validated rows in server memory; MongoDB receives them only after confirmation. Dashboard requests use both ordinary queries and aggregation pipelines. Report exports are generated on request.
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-* **Node.js 18+**
-* **MongoDB** (Local instance or MongoDB Atlas URI)
-* **Docker Desktop** (Optional, recommended for easiest setup)
+
+* Node.js 22.12+ and npm for local development
+* A reachable MongoDB instance
+* EmailJS settings for email verification/recovery and Google/GitHub OAuth settings
+* Docker with Compose for the optional container setup
+
+```bash
+git clone https://github.com/sriram629/Finance-Manager.git
+cd Finance-Manager
+```
 
 ### Environment Variables
 
-Create a `.env` file in your `server/` directory:
+Create `server/.env` for manual local development:
 
-```env
-# --- Server Configuration ---
+```dotenv
 NODE_ENV=development
 PORT=5050
-DATABASE_URL=mongodb+srv://your-mongo-uri
-JWT_SECRET=your_super_secret_jwt_key
-JWT_EXPIRY=7d
+DATABASE_URL=mongodb://127.0.0.1:27017/finance_manager
+JWT_SECRET=REPLACE_WITH_A_LONG_RANDOM_SECRET
+JWT_EXPIRY=1h
 
-# --- Email Service (Resend API for OTP) ---
-RESEND_API_KEY=re_your_resend_key
-
-# --- OAuth 2.0 (Google/GitHub) ---
-GOOGLE_CLIENT_ID=your_google_id
-GOOGLE_CLIENT_SECRET=your_google_secret
-GITHUB_CLIENT_ID=your_github_id
-GITHUB_CLIENT_SECRET=your_github_secret
-
-# --- CORS and OAuth Redirect URLs ---
-# For local dev without Docker: http://localhost:5173 and http://localhost:5050
-# For Docker local: http://localhost:8080 and http://localhost:5050
 CLIENT_URL=http://localhost:8080
 SERVER_URL=http://localhost:5050
+ALLOWED_ORIGINS=http://localhost:8080
+
+EMAILJS_SERVICE_ID=YOUR_SERVICE_ID
+EMAILJS_FINANCE_TEMPLATE_ID=YOUR_TEMPLATE_ID
+EMAILJS_PUBLIC_KEY=YOUR_PUBLIC_KEY
+EMAILJS_PRIVATE_KEY=YOUR_PRIVATE_KEY
+
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET
+GITHUB_CLIENT_ID=YOUR_GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET=YOUR_GITHUB_CLIENT_SECRET
 ```
 
-### Option 1: Running with Docker (Recommended)
+Generate a signing secret with `openssl rand -hex 32`. Use an Atlas URI instead of the local database address when appropriate. EmailJS templates receive `to_email`, `first_name`, and `otp_code`.
 
-Build and start the entire application with one command:
+The current server initializes both Passport strategies at startup. Supply valid provider configuration to exercise social login; these strategies are not conditionally disabled when their settings are absent. Register these backend callback URLs:
+
+```text
+http://localhost:5050/api/auth/google/callback
+http://localhost:5050/api/auth/github/callback
+```
+
+The frontend callback page is `/auth/callback`. It exchanges a short-lived login ticket with a browser-held verifier for a JWT.
+
+For manual development, create `client/.env`:
+
+```dotenv
+VITE_API_URL=http://localhost:5050/api
+```
+
+The `/api` suffix is required here. Keep signing keys, database credentials, and OAuth secrets in backend settings; `VITE_` values become part of the browser build.
+
+### Option 1: Running with Docker
+
+From the repository root:
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-* **Frontend:** http://localhost:8080
-* **Backend API:** http://localhost:5050
-* **API Documentation:** http://localhost:5050/api/docs
+Open [localhost:5050](http://localhost:5050). The root Dockerfile builds the client and serves it with the API through one Express service. Compose loads `server/.env` and overrides local origins to port 5050. API documentation is at [localhost:5050/api/docs](http://localhost:5050/api/docs).
+
+Compose does not start MongoDB. Set `DATABASE_URL` to a database reachable from the container. `127.0.0.1` inside the container refers to the container itself; use a reachable Atlas address or the appropriate host-network address for your Docker installation. This Compose configuration uses development settings and is intended for local use.
 
 ### Option 2: Running Locally (Manual)
 
-**1. Setup Backend:**
+**Terminal 1 — backend:** from the repository root:
+
 ```bash
 cd server
-npm install 
-npm run server
-```
-
-**2. Setup Frontend:**
-```bash
-cd client
-npm install
+npm ci
 npm run dev
 ```
 
-* **Frontend:** http://localhost:5173
-* **Backend:** http://localhost:5050
+**Terminal 2 — frontend:** from the repository root:
+
+```bash
+cd client
+npm ci
+npm run dev
+```
+
+Open [localhost:8080](http://localhost:8080). The API runs on port 5050. Use `npm start` in `server/` to run without the development watcher.
 
 ---
 
 ## 📊 Dashboard Features Breakdown
 
 ### Main Dashboard Metrics
-| Metric | Description | Update Frequency |
-|:---|:---|:---|
-| **Current Income** | Total earnings from schedules in selected period | Real-time |
-| **Current Expenses** | Total spending across all categories | Real-time |
-| **Net Income** | Income minus Expenses | Real-time |
-| **Next Expenses** | Upcoming scheduled payments (Weekly/Monthly/Custom) | Real-time |
+
+| Metric | Current calculation |
+| :--- | :--- |
+| **Current Income** | Sum of hours × hourly rate for hourly schedules in the selected period |
+| **Current Expenses** | Sum of expense amounts in the selected period |
+| **Net Income** | Current income minus current expenses |
+| **Monthly Income Estimate** | Average daily hourly income in the selected period × 30.4375 |
 
 ### Visualizations
-1. **Expense Pie Chart:** Category-wise spending distribution
-2. **Income vs. Expense Bar Chart:** Week-over-week comparison for trend analysis
-3. **Schedule Timeline:** Upcoming work shifts with full details (date, name, type, hours, pay rate)
+
+* Daily hourly-income chart and category-based expense breakdown
+* Weekly income/expense trend and a separate schedule listing
+
+### Known Monthly-Salary Limitation
+
+Monthly-salary records currently produce different results across code paths. This should be resolved before monthly salaries are used for financial decisions.
+
+| Code path | Treatment of a monthly salary of 4,000 |
+| :--- | :--- |
+| Schedule list and PDF schedule rows | 1,000 (`monthlySalary / 4`) |
+| CSV/XLSX schedule export data | 4,000 (full salary) |
+| Dashboard income and income charts | Excluded; these paths count hourly schedules |
+
+The README reflects the present behavior. A consistent salary-allocation rule and regression tests are still required. These exports should be reviewed as personal records, not certified accounting or tax reports.
 
 ---
 
 ## 📂 Project Structure
 
-```plaintext
-finance-manager/
-├── client/                    # React + TypeScript + Vite frontend
+```text
+Finance-Manager/
+├── client/
 │   ├── src/
-│   │   ├── api/              # Axios configuration with interceptors
-│   │   ├── components/       # Reusable UI components (Shadcn)
-│   │   ├── context/          # Auth context (JWT management)
-│   │   ├── pages/            # Main application views
-│   │   │   ├── Dashboard.tsx       # KPI + Visualizations
-│   │   │   ├── AddSchedule.tsx     # Schedule form
-│   │   │   ├── UploadSchedule.tsx  # CSV bulk upload
-│   │   │   ├── AddExpense.tsx      # Expense tracking
-│   │   │   ├── Reports.tsx         # Export module
-│   │   │   └── Settings.tsx        # Profile management
-│   │   └── lib/              # Utilities (Tailwind merge, validators)
-│   └── Dockerfile
-│
-├── server/                    # Express.js backend
-│   ├── config/               # Database + Passport configuration
-│   ├── middleware/           # Auth, rate-limiting, error handling
-│   ├── models/               # Mongoose schemas (User, Schedule, Expense)
-│   ├── routes/               # RESTful API endpoints
-│   │   ├── auth.js          # Login, Register, OTP verification
-│   │   ├── schedules.js     # CRUD + Bulk upload
-│   │   ├── expenses.js      # CRUD + Receipt handling
-│   │   └── reports.js       # PDF/CSV/Excel generation
-│   ├── services/             # Resend email service
-│   ├── uploads/              # Local storage for receipts
-│   └── Dockerfile
-│
-└── docker-compose.yml         # Container orchestration
+│   │   ├── api/axios.ts        # API base URL and token handling
+│   │   ├── components/        # Layout, authentication, shared UI
+│   │   ├── context/           # Authentication state
+│   │   ├── pages/
+│   │   │   ├── Landing.tsx
+│   │   │   ├── Home.tsx        # Dashboard and schedules
+│   │   │   ├── AddSchedule.tsx
+│   │   │   ├── UploadSchedule.tsx
+│   │   │   ├── Expenses.tsx
+│   │   │   ├── Reports.tsx
+│   │   │   └── Settings.tsx
+│   │   └── lib/               # Social login and utilities
+│   ├── vite.config.ts
+│   └── package.json
+├── server/
+│   ├── config/                # MongoDB, Passport, Swagger
+│   ├── middleware/            # Authentication, upload, errors
+│   ├── models/                # User, Schedule, Expense, AuthTicket
+│   ├── routes/                # Auth, user, schedules, expenses, reports
+│   ├── services/emailService.js
+│   ├── utils/                 # Tokens, tickets, origins, validation
+│   ├── index.js
+│   └── package.json
+├── scripts/                   # Client dependency-audit checks
+├── docs/                      # Dependency review notes
+├── screenshots/
+├── .github/workflows/node.js.yml
+├── Dockerfile
+├── docker-compose.yaml
+└── README.md
 ```
+
+Environment files are created locally. Temporary upload storage defaults to `server/uploads`; `UPLOAD_DIR` can override that path.
 
 ---
 
 ## 🔐 Security Features
 
 ### API Protection Layers
-1. **Rate Limiting:** Prevents brute-force attacks on authentication endpoints
-2. **Throttling:** Controls request frequency to prevent server overload
-3. **NoSQL Injection Sanitization:** Validates and sanitizes all user inputs
-4. **JWT Expiry:** Configurable token expiration (default: 7 days)
-5. **CORS Configuration:** Strict origin validation for cross-origin requests
+
+1. **Authentication Rate Limit:** Ten requests per 15-minute window on `/api/auth`, using the limiter's default IP-based identification.
+2. **Protected API Rate Limit:** A shared limit of 100 requests per 15-minute window across the protected user and financial route groups.
+3. **Token Validation:** JWT signature/expiry checks, account verification, and token-version checks. Default expiry is one hour; `JWT_EXPIRY` can override it.
+4. **Record Ownership:** Financial handlers scope records to the authenticated user. Receipt retrieval checks the expense owner.
+5. **Request Handling:** Helmet, configured browser origins, MongoDB operator sanitization, and endpoint validation provide specific controls. They do not establish complete protection against every threat.
+
+The frontend stores its bearer token in local storage. OAuth uses state validation and a one-time, verifier-bound login ticket. CORS controls browser access and does not replace authentication.
 
 ### Authentication Flow
-1. User registers with email/password → OTP sent via Resend API
-2. Email verification required before login access
-3. JWT token issued upon successful authentication
-4. Token validated on every protected API request
-5. Social OAuth redirects handled securely via Passport.js
+
+Email registration creates an unverified account and sends a code through EmailJS. After verification, successful password login returns a JWT. Social login passes through the provider callback, returns a short-lived ticket to the frontend, and exchanges that ticket with its verifier for a JWT. Protected API requests include `Authorization: Bearer <token>`.
 
 ---
 
 ## 📖 API Documentation
 
-Full RESTful API documentation is available via Swagger UI when the server is running:
-
-**Local URL:** http://localhost:5050/api/docs
+Swagger UI is served at `/api/docs`. The table below lists routes implemented in the current handlers; some embedded Swagger descriptions may lag behind those handlers.
 
 ### Core Endpoints
-- `POST /auth/register` - User registration with OTP
-- `POST /auth/login` - JWT token generation
-- `GET /schedules` - Retrieve user schedules
-- `POST /schedules/bulk` - CSV upload endpoint
-- `POST /expenses` - Create expense entry
-- `GET /reports/:type` - Generate financial reports
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| POST | `/api/auth/register` | Register an email account |
+| POST | `/api/auth/verify-otp` | Verify an account code |
+| POST | `/api/auth/login` | Password login |
+| POST | `/api/auth/exchange` | Exchange an OAuth ticket and verifier |
+| GET / POST | `/api/schedules` | List or create schedules |
+| PUT / DELETE | `/api/schedules/:id` | Edit or remove an owned schedule |
+| POST | `/api/schedules/upload` | Parse an uploaded spreadsheet and return preview |
+| POST | `/api/schedules/confirm-upload` | Import selected valid rows |
+| GET | `/api/schedules/template` | Download import template |
+| GET / POST | `/api/expenses` | List or create expenses |
+| PUT / DELETE | `/api/expenses/:id` | Edit or remove an owned expense |
+| GET | `/api/expenses/:id/receipt` | Download an owned receipt |
+| GET | `/api/reports/dashboard` | Dashboard totals and chart data |
+| POST | `/api/reports/generate` | Generate a report |
+| GET | `/api/reports/quick-export` | Export using a preset |
+| GET | `/api/user/profile` | Read the signed-in profile |
+
+`GET /api/health` returns a process status response. It does not execute a database connectivity probe on each request.
 
 ---
 
@@ -284,34 +356,51 @@ Full RESTful API documentation is available via Swagger UI when the server is ru
 <details>
 <summary>Click to view all screenshots</summary>
 
+### Website Page
+
+Public landing page captured on 26 October 2026 after loading. The overview illustration contains example values.
+
+![Current Finance Manager landing page](./screenshots/landing-current.png)
+
 ### Authentication Flow
-| Login | Create Account | Email Verification |
-|:---:|:---:|:---:|
-| ![Login](./screenshots/login.png) | ![Register](./screenshots/register.png) | ![Verify](./screenshots/verify.png) |
+
+Current login page, captured on 26 October 2026.
+
+![Current Finance Manager login page](./screenshots/login-current.png)
+
+The remaining images are retained from the earlier gallery. They may differ from the current interface; updated authenticated views require a demo account with non-sensitive sample records.
+
+| Create Account | Email Verification |
+| :---: | :---: |
+| ![Earlier registration view](./screenshots/register.png) | ![Earlier verification view](./screenshots/verify.png) |
 
 ### Dashboard Views
+
 | Main Dashboard | Analytics Dashboard |
-|:---:|:---:|
-| ![Dashboard](./screenshots/dashboard.png) | ![Dashboard2](./screenshots/dashboard2.png) |
+| :---: | :---: |
+| ![Earlier dashboard](./screenshots/dashboard.png) | ![Earlier analytics view](./screenshots/dashboard2.png) |
 
 ### Schedule Management
-| Schedule Overview |
-|:---:|
-| ![Schedules](./screenshots/schedules2.png) |
 
-| Add Schedule Form | Bulk CSV Upload |
-|:---:|:---:|
-| ![AddSchedule](./screenshots/schedules.png) | ![UploadSchedule](./screenshots/schedules3.png) |
+![Earlier schedule overview](./screenshots/schedules2.png)
+
+| Add Schedule | Spreadsheet Upload |
+| :---: | :---: |
+| ![Earlier schedule form](./screenshots/schedules.png) | ![Earlier upload view](./screenshots/schedules3.png) |
 
 ### Expense Management
-| Expense Tracking | Add Expense Form |
-|:---:|:---:|
-| ![Expenses](./screenshots/expenses2.png) | ![AddExpense](./screenshots/expenses.png) |
+
+| Expense Tracking | Expense Form |
+| :---: | :---: |
+| ![Earlier expenses view](./screenshots/expenses2.png) | ![Earlier expense form](./screenshots/expenses.png) |
 
 ### Reports & Settings
-| Report Generation | Settings Panel | Profile Settings |
-|:---:|:---:|:---:|
-| ![Reports](./screenshots/reports.png) | ![Settings](./screenshots/settings2.png) | ![Settings](./screenshots/settings.png) |
+
+| Report Generation | Settings |
+| :---: | :---: |
+| ![Earlier reports view](./screenshots/reports.png) | ![Earlier settings view](./screenshots/settings2.png) |
+
+![Earlier profile settings](./screenshots/settings.png)
 
 </details>
 
@@ -320,69 +409,93 @@ Full RESTful API documentation is available via Swagger UI when the server is ru
 ## 🎓 Use Cases
 
 ### For Students
-- Track part-time job hours and tutoring sessions
-- Monitor scholarship income and educational expenses
-- Generate financial reports for budgeting and tax purposes
+
+Record part-time work hours and daily expenses. Review spending by category or retain a report for personal reference.
 
 ### For Professionals
-- Manage multiple freelance or gig economy income streams
-- Track business expenses by category for tax deductions
-- Export professional financial audits for accounting purposes
+
+Maintain schedule and expense records across work activities. Export selected records for review in a spreadsheet.
 
 ### For Part-Time Workers
-- Schedule shift-based work across multiple employers
-- Compare hourly vs. fixed-salary earnings
-- Visualize income trends to optimize work schedules
+
+Import multiple hourly shifts, inspect validation results, and compare recorded earnings with expenses. Monthly-salary records require the calculation correction described above.
 
 ---
 
-## 🚀 Performance Metrics
+## 🚀 Runtime Limits & Validation
 
-| Feature | Performance | Impact |
-|:---|:---|:---|
-| **Dashboard Load Time** | <500ms | Real-time KPI calculation via MongoDB aggregation |
-| **CSV Bulk Upload** | ~2s for 100 rows | 70% reduction in data-entry time |
-| **PDF Report Generation** | <3s | Optimized PDFKit rendering |
-| **API Rate Limit** | 100 req/15min | 100% protection against automated threats |
-| **JWT Token Validation** | <10ms | Efficient middleware implementation |
+| Area | Current setting |
+| :--- | :--- |
+| Receipt upload | 5 MB; JPEG, PNG, PDF |
+| Schedule upload | 10 MB; CSV, XLS, XLSX |
+| Import preview | First ten rows; counts cover parsed rows |
+| Pending import | User-scoped server memory; expires after one hour |
+| Authentication requests | 10 per 15-minute window |
+| Protected API requests | 100 per 15-minute window |
+| JWT lifetime | One hour by default |
+| OAuth login ticket | One minute, single-use, bound to a verifier |
+
+No measured dashboard latency, import speed, or time-saving percentage is claimed.
+
+Frontend validation, from `client/`:
+
+```bash
+npm run lint
+npx tsc --noEmit -p tsconfig.app.json
+npm run build
+```
+
+Dependency-audit helper tests, from the repository root:
+
+```bash
+node --test scripts/audit-client.test.mjs
+```
+
+CI also checks dependencies and backend JavaScript syntax, then builds the container. These checks do not establish correctness of every financial calculation. Test registration, both social providers, import confirmation, and owned-record access with disposable data before deployment. Salary consistency needs dedicated regression coverage.
 
 ---
 
-[![Live Demo](https://img.shields.io/badge/demo-online-brightgreen.svg?style=for-the-badge&logo=render)](https://finance-manager-dev.onrender.com/login)
+[![Live Demo](https://img.shields.io/badge/demo-online-brightgreen.svg?style=for-the-badge&logo=render)](https://finance-manager-dev.onrender.com)
+
+Render may need time to start an inactive service. Allow at least ten seconds; cold starts can take longer.
 
 ---
 
 ## 🤝 Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
+
+Contributions are welcome through pull requests. Describe the affected behavior and run the relevant checks. Changes to income calculations should define the salary-allocation rule and include tests across dashboard and export paths.
 
 ---
 
 ## 📝 License
-This project is open source and available under the MIT License.
+
+A standalone license file has not been included in this repository. Contact the maintainer for licensing terms before redistribution or reuse.
 
 ---
 
 ## 🔗 Links
-- **Live Demo:** [finance-manager-dev.onrender.com/login](https://finance-manager-dev.onrender.com/login)
-- **API Documentation:** Available at `/api/docs` when server is running
-- **Report Issues:** [GitHub Issues](#)
+
+- **Live Demo:** [finance-manager-dev.onrender.com](https://finance-manager-dev.onrender.com)
+- **API Documentation:** `/api/docs` on the running backend
+- **Report Issues:** [GitHub Issues](https://github.com/sriram629/Finance-Manager/issues)
 
 ---
 
 **Built with ❤️ using React, TypeScript, Express, and MongoDB**
 
-
 ## Deploy on another platform
 
-Use the root `Dockerfile` on a host that supports a persistent Node service (for example Railway). It builds and serves both the frontend and API at one HTTPS origin. Set the repository root as the build context and use `/api/health` as the health-check path. Use one application replica until spreadsheet upload previews are moved from memory to shared storage.
+Use the root Dockerfile with the repository root as build context. It builds the frontend with `/api` and serves both parts from one origin. Use one application replica while import previews remain in process memory. Preserve the MongoDB connection when migrating an existing deployment.
 
-Set these private runtime variables in the host dashboard: `DATABASE_URL`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `EMAILJS_SERVICE_ID`, `EMAILJS_FINANCE_TEMPLATE_ID`, `EMAILJS_PUBLIC_KEY`, and `EMAILJS_PRIVATE_KEY`. Preserve the existing database connection to retain accounts and records. Do not put these values in Git or frontend build variables.
+Configure database, JWT, EmailJS, and OAuth settings as private runtime variables in the host dashboard. Production startup does not load `server/.env` automatically. Set `NODE_ENV=production` and `SERVE_CLIENT=true`; the Dockerfile already supplies these defaults. The host can override `PORT`.
 
-After the host assigns an HTTPS domain, set `SERVER_URL`, `CLIENT_URL`, and `ALLOWED_ORIGINS` to that same origin, without an `/api` suffix. The container already sets `NODE_ENV=production`, `SERVE_CLIENT=true`, and builds the frontend with `/api`. Configure the provider callbacks as:
+After the host assigns an HTTPS domain, set `CLIENT_URL`, `SERVER_URL`, and `ALLOWED_ORIGINS` to that origin, without an `/api` suffix. Register the provider callbacks:
 
-- Google: `https://YOUR-HOST/api/auth/google/callback`
-- GitHub: `https://YOUR-HOST/api/auth/github/callback`
+```text
+https://YOUR-HOST/api/auth/google/callback
+https://YOUR-HOST/api/auth/github/callback
+```
 
-Update the OAuth app homepage and Google authorized JavaScript origin to the new origin as applicable. Redeploy after setting the URLs, then check both providers from the new login page. Keep the previous deployment until the new login and data access have been verified. Host migration does not determine or resolve Google's original security classification.
+Use `/api/health` as a process health endpoint, with a separate data-access check for database readiness. Verify both login providers and existing account records after migration. New receipts are stored in MongoDB; legacy receipts with only filesystem references require their existing upload files to remain available. Pending imports must be uploaded again after a restart.
 
-For local container use, `docker compose up --build` loads `server/.env` and serves the app at `http://localhost:5050`. Its development settings are only for local use. The production Dockerfile excludes environment files, uploads, tests, and `sample/` from the build context.
+For separate frontend hosting, set `VITE_API_URL=https://YOUR-API/api` before building and configure the exact frontend origin on the backend. The static host must serve `index.html` for client routes.
